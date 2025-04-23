@@ -1,0 +1,9 @@
+[package]
+name = "grad"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+confy = "0.6.1"
+macroquad = "0.4.14"
+rand = "0.9.1"

@@ -1,0 +1,1 @@
+pub const VERSION_STR: &str = "0.1.0";
