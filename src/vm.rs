@@ -45,7 +45,10 @@ pub enum Instruction {
     JumpCmpFalse { op: usize },
     Jump { op: usize },
 
+    DisplayContainer { id: u16 },
+
     Halt,
+    Delay { ms: u32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 confy = "0.6.1"
 macroquad = "0.4.14"
-rand = "0.9.1"
+serde = "1.0.219"
+serde_derive = "1.0.219"

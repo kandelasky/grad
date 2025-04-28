@@ -1,6 +1,11 @@
 //use std::path::Path;
 use std::collections::HashMap;
+use std::thread;
+use std::time::Duration;
+
 use grad::*;
+use macroquad::prelude as mq;
+use serde_derive::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum KickstartError {
@@ -9,7 +14,8 @@ pub enum KickstartError {
     InvalidUtf8
 }
 
-fn main() -> Result<(), KickstartError> {
+#[macroquad::main(window_config)]
+async fn main() -> Result<(), KickstartError> {
     eprintln!("Grad v{}", meta::VERSION_STR);
 
     /* let path = Path::new("boot.grad");
@@ -47,7 +53,7 @@ fn main() -> Result<(), KickstartError> {
 
     let main: Vec<vm::Instruction> = {
         // TODO: file read
-        vec![
+        /* vec![
             SetFlagMemLog { value: 1 },
             SetFlagMemLogEnd { value: 1 },
 
@@ -63,6 +69,37 @@ fn main() -> Result<(), KickstartError> {
             NewVariable { id: 0 },
             GetContainer { id: 0, var: 0 },
             DeleteContainer { id: 0 },
+        ] */
+        vec![
+            SetFlagMemLog { value: 1 },
+            SetFlagMemLogEnd { value: 1 },
+
+            SetX { value: 240 },
+            SetY { value: 192 },
+            NewContainer { id: 0 },
+
+            SetX { value: 0 },
+            SetY { value: 0 },
+            SetValue { value: eval::pack(255, 0, 0, 255) },
+            SetContainer { id: 0 },
+
+            SetX { value: 3 },
+            SetY { value: 5 },
+            SetValue { value: eval::pack(0, 255, 0, 255) },
+            SetContainer { id: 0 },
+
+            SetX { value: 5 },
+            SetY { value: 3 },
+            SetValue { value: eval::pack(0, 255, 0, 255) },
+            SetContainer { id: 0 },
+
+            SetX { value: 10 },
+            SetY { value: 10 },
+            SetValue { value: eval::pack(0, 0, 255, 255) },
+            SetContainer { id: 0 },
+
+            DisplayContainer { id: 0 },
+            Delay { ms: 5000 },
         ]
     };
     
@@ -71,6 +108,9 @@ fn main() -> Result<(), KickstartError> {
     
     let mut flag_flt: bool = false;
     let (mut mem_debug, mut mem_end) = (false, false);
+
+    /* let mut flag_addr_read: bool = false;
+    let mut reg_addr: Option<u32> = None; */
     
     let mut cont: HashMap<u16, vm::Container> = HashMap::new();
     let mut float_cont: HashMap<u16, vm::FloatContainer> = HashMap::new();
@@ -296,13 +336,14 @@ fn main() -> Result<(), KickstartError> {
                     report!(format!("SetContainer: {}", MSG_UNDEF_CONT));
                 }
 
-                let (xsize, ysize) = get_size!("SetContainer");
+                let (x, y) = get_size!("SetContainer");
                 let value = get_value!("SetContainer");
 
                 if is_integer {
                     let container: &mut vm::Container = cont.get_mut(&id).unwrap();
+                    let (xsize, ysize) = (container.size.0, container.size.1);
 
-                    if xsize >= container.size.0 || ysize >= container.size.1 {
+                    if x >= xsize || y >= ysize {
                         sreport!("SetContainer: unreachable");
                     }
 
@@ -312,13 +353,14 @@ fn main() -> Result<(), KickstartError> {
                         sreport!("SetContainer: VAL expected to have type integer");
                     };
 
-                    if let Some(elem) = container.data.get_mut(xsize * ysize) {
+                    if let Some(elem) = container.data.get_mut(x + ysize * y) {
                         *elem = value;
                     }
                 } else if is_float {
                     let container: &mut vm::FloatContainer = float_cont.get_mut(&id).unwrap();
-                    
-                    if xsize >= container.size.0 || ysize >= container.size.1 {
+                    let (xsize, ysize) = (container.size.0, container.size.1);
+
+                    if x >= xsize || y >= ysize {
                         sreport!("SetContainer: unreachable");
                     }
                     
@@ -328,7 +370,7 @@ fn main() -> Result<(), KickstartError> {
                         sreport!("SetContainer: VAL expected to have type float");
                     };
                     
-                    if let Some(elem) = container.data.get_mut(xsize * ysize) {
+                    if let Some(elem) = container.data.get_mut(x + ysize * y) {
                         *elem = value;
                     }
                 }
@@ -391,6 +433,65 @@ fn main() -> Result<(), KickstartError> {
                 }
             } // NewVariable
 
+            DisplayContainer { id } => {
+                if is_float {
+                    sreport!("DisplayContainer: float mode must be disabled");
+                }
+
+                let (data, xsize, ysize)= if let Some(cont) = cont.get(&id) {
+                    let xsize: u16 = if let Ok(val) = cont.size.0.try_into() {
+                        val
+                    } else {
+                        sreport!("DisplayContainer: x size overflow");
+                    };
+
+                    let ysize: u16 = if let Ok(val) = cont.size.1.try_into() {
+                        val
+                    } else {
+                        sreport!("DisplayContainer: y size overflow");
+                    };
+
+                    (&cont.data, xsize, ysize)
+                } else {
+                    report!(format!("DisplayContainer: {}", MSG_UNDEF_CONT));
+                };
+
+                let image = {
+                    let mut image = mq::Image::gen_image_color(xsize, ysize, mq::PINK);
+
+                    /* let mut sl: Vec<mq::Color> = Vec::new();
+                    for &pixel in data {
+                        let color: mq::Color = {
+                            let (r, g, b, a) = {
+                                let unpack = eval::unpack(pixel);
+                                (unpack.0, unpack.1, unpack.2, unpack.3)
+                            };
+                            mq::Color::from_rgba(r, g, b, a)
+                        };
+                        sl.push(color);
+                    }
+                    image.update(&sl); */
+
+                    for (at, &pixel) in data.iter().enumerate() {
+                        let y = xsize as u32 / at as u32;
+                        let x = at as u32 - xsize as u32 * y;
+                    }
+
+                    image
+                };
+                
+                mq::clear_background(mq::BLACK);
+                mq::draw_texture(&mq::Texture2D::from_image(&image), 0., 0., mq::WHITE);
+                //mq::draw_text("grad", 50., 50., 16., mq::WHITE);
+                mq::next_frame().await;
+                
+                drop(image);
+            }
+
+            Delay { ms } => {
+                thread::sleep(Duration::from_millis(ms as u64));
+            }
+
             _ => todo!()
         }
     }
@@ -398,15 +499,52 @@ fn main() -> Result<(), KickstartError> {
     if mem_end {
         //                       |------------ 30 ------------|
         const BIG_DELIM: &str = "------------------------------";
-
-        println!("\n{BIG_DELIM}\nleft containers (int):\n{:#?}", cont);
-        println!("\nleft containers (float):\n{:#?}", float_cont);
-
-        println!("\n{BIG_DELIM}\nleft variables (int):\n{:#?}", vars);
-        println!("\nleft variables (float):\n{:#?}", float_vars);
-
         println!("\n{BIG_DELIM}");
+
+        println!("left int containers:\t{}", cont.len());
+        println!("left float containers:\t{}", float_cont.len());
+
+        println!("\nleft int variables:\t{}", vars.len());
+        println!("left float variables:\t{}", float_vars.len());
     }
 
     Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct GradConfig {
+    width: u32,
+    height: u32,
+    is_fullscreen: bool,
+    is_resizable: bool,
+}
+
+impl Default for GradConfig {
+    fn default() -> Self {
+        Self {
+            width: 960,
+            height: 768,
+            is_fullscreen: false,
+            is_resizable: true,
+        }
+    }
+}
+
+fn window_config() -> mq::Conf {
+    let conf = if let Ok(conf) = confy::load::<GradConfig>("grad", None) {
+        conf
+    } else {
+        eprintln!("grad: unable to load config file, using default");
+        Default::default()
+    };
+
+    mq::Conf {
+        window_title: format!("Grad v{}", meta::VERSION_STR),
+        window_width: conf.width as i32,
+        window_height: conf.height as i32,
+        window_resizable: conf.is_resizable,
+        fullscreen: conf.is_fullscreen,
+        // TODO: icon
+        ..Default::default()
+    }
 }

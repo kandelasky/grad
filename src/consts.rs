@@ -35,6 +35,8 @@ pub mod instr {
         )
     }
 
+    // TODO: replace this with macro as in config.rs
+
     const_new!(PAGE_MAIN_START, 0);
     const_new!(PAGE_FN_START, 1);
 
@@ -45,7 +47,7 @@ pub mod instr {
     const_new!(SET_VALUE, 29);
     const_new!(SET_EXPR_VALUE, 30);
     const_new!(SET_VAR_VALUE, 31);
-    const_new!(SET_FLOAT_VALUE, 37);
+    const_new!(SET_FLOAT_VALUE, 41);
 
     const_new!(SET_FLAG_MEM_LOG, 35);
     const_new!(SET_FLAG_MEM_LOG_END, 36);
@@ -62,6 +64,9 @@ pub mod instr {
     const_new!(SET_VAR_X, 32);
     const_new!(SET_VAR_Y, 33);
 
+    const_new!(SET_MODE_ADDR, 40);
+    const_new!(SET_VAR_ADDR, 39);
+
     const_new!(NEW_CONTAINER, 14);
     const_new!(DELETE_CONTAINER, 15);
     const_new!(SET_CONTAINER, 16);
@@ -72,6 +77,8 @@ pub mod instr {
 
     const_new!(COMPARE_EXPR, 9);
     const_new!(COMPARE_EXPR_INV, 10);
+
+    const_new!(DISPLAY_CONTAINER, 37);
 
     const_new!(HALT, 28);
 }
