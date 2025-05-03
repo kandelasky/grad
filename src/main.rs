@@ -1,19 +1,40 @@
-//use std::path::Path;
+use std::path::Path;
 
 use grad::*;
 use macroquad::prelude as mq;
 use serde_derive::*;
+use colored::Colorize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum KickstartError {
+pub enum Error {
     FileReadFailed,
     CompilationFailed,
     InvalidUtf8
 }
 
 #[macroquad::main(window_config)]
-async fn main() -> Result<(), KickstartError> {
+async fn main() -> Result<(), Error> {
     eprintln!("Grad v{}", consts::VERSION_STR);
+
+    let path = Path::new("boot.gr");
+
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("{}: failed to read file:\n  {}: {}", "fatal error".bold().red(), format!("{:?}", err.kind()).bold(), err.kind());
+            return Err(Error::FileReadFailed)
+        }
+    };
+
+    let is_bytecode = bytes[0..=8] == consts::MAGIC;
+    if is_bytecode {
+        // run_bytecode(SLICE);
+    } else if let Ok(source) = String::from_utf8(bytes) {
+        run::exec(source);
+    } else {
+        eprintln!("{}: failed to read file:\n  {}", "fatal error".bold().red(), "this file contains invalid UTF-8 data".bold());
+        return Err(Error::InvalidUtf8)
+    }
 
     Ok(())
 }
