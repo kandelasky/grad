@@ -6,9 +6,9 @@ use serde_derive::*;
 use colored::Colorize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Error {
+enum Error {
     FileReadFailed,
-    CompilationFailed,
+    // CompilationFailed,
     InvalidUtf8
 }
 

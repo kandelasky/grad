@@ -10,6 +10,7 @@ pub enum ReportType {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ErrorType {
     IntOverflow,
+    FloatOverflow,
     StringInExpr,
     InvalidChar(char),
     InvalidOp,
@@ -25,10 +26,11 @@ impl fmt::Display for ErrorType {
         use ErrorType::*;
         let string = match self {
             IntOverflow => "IntegerOverflow",
+            FloatOverflow => "FloatOverflow",
             StringInExpr => "StringInExpr",
             InvalidChar(_) => "InvalidChar",
             InvalidOp => "InvalidOperator",
-            InvalidExpr => "invalid expression",
+            InvalidExpr => "InvalidExpression",
             ExpectedIdent => "ExpectedIdentifier",
             ExpectedOp => "ExpectedOperator",
             ExpectedExpr => "ExpectedExpression",
@@ -49,7 +51,8 @@ impl ErrorType {
 
         use ErrorType::*;
         match self {
-            IntOverflow => format!("{}", "this line has a number that doesn't fit into 32-bit integer".bold()),
+            IntOverflow => format!("{}", "integer overflow".bold()),
+            FloatOverflow => format!("{}", "integer overflow".bold()),
             StringInExpr => format!("{}", "strings cannot appear in expressions".bold()),
             InvalidChar(ch) => format!("{}: {}", "invalid character".bold(), ch),
             InvalidOp => format!("{}", "invalid operator".bold()),
@@ -70,6 +73,6 @@ pub fn report(rtype: ReportType, line: usize, what: ErrorType, note: Option<&str
     eprintln!("\n{rtype}: line {line}:\n  {}: {}", what.to_string().bold(), what.describe());
 
     if let Some(text) = note {
-        eprintln!("{}: {}", "hint".bold().green(), text);
+        eprintln!("{}: {}", "note".bold().green(), text);
     }
 }

@@ -125,9 +125,26 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
 }
 
 pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>>) -> Result<String, ErrorType> {
-    // 1. replace variables with its values
-    let tokens = if let Some(variables) = variables {
+    // 1. replace `true` and `false` with 1/0
+    let mut tokens_ = {
         let mut tokens = toks.to_vec();
+        for (at, token) in toks.iter().enumerate() {
+            if let Token::Identifier(id) = token {
+                let id = id.to_ascii_lowercase();
+                if id == *"true" {
+                    tokens[at] = Token::Integer(1)
+                } else if id == *"false" {
+                    tokens[at] = Token::Integer(0)
+                }
+            }
+        }
+        //println!("{:#?}", tokens);
+        tokens
+    };
+
+    // 2. replace variables with theirs value
+    tokens_ = if let Some(variables) = variables {
+        let mut tokens = tokens_.clone(); drop(tokens_);
         for (at, token) in toks.iter().enumerate() {
             if let Token::Identifier(id) = token {
                 if let Some(var) = variables.get(id) {
@@ -141,19 +158,21 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
                 }
             }
         }
-        println!("{:#?}", tokens);
+        //println!("{:#?}", tokens);
         tokens
     } else {
-        toks.to_vec()
+        // do nothing
+        tokens_
     };
 
-    // 2. stringify
+    // 3. stringify
     let mut result = String::new();
-    for token in tokens {
+    for token in tokens_ {
         //result.push(' ');
         let pusheen = match token {
             Token::Integer(int) => &int.to_string(),
             Token::Float(fl) => &fl.to_string(),
+            Token::Assign => "=",
             Token::Add => "+",
             Token::Substract => "-",
             Token::Multiply => "*",
@@ -172,6 +191,8 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
 
 #[cfg(test)]
 mod tests {
+    use crate::mem::Variable;
+
     use super::*;
 
     #[test]
@@ -189,8 +210,8 @@ mod tests {
     #[test]
     pub fn exprify_variables() {
         let mut variables = HashMap::new();
-        variables.insert(String::from("var1"), Value::Int32(2));
-        variables.insert(String::from("var2"), Value::Int32(3));
+        variables.insert(String::from("var1"), Variable::new(Value::Int32(2), false));
+        variables.insert(String::from("var2"), Variable::new(Value::Int32(3), false));
 
         let toks = [
             Token::Identifier(String::from("var1")),
@@ -198,6 +219,19 @@ mod tests {
             Token::Identifier(String::from("var2")),
         ];
         let expected = "2+3";
+
+        assert_eq!(exprify(&toks, Some(&variables)).unwrap(), expected)
+    }
+
+    #[test]
+    pub fn exprify_bool() {
+        let toks = [
+            Token::Identifier(String::from("true")),
+            Token::Assign, // ==
+            Token::Assign,
+            Token::Identifier(String::from("true")),
+        ];
+        let expected = "1==1";
 
         assert_eq!(exprify(&toks, None).unwrap(), expected)
     }
