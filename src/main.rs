@@ -36,6 +36,8 @@ async fn main() -> Result<(), Error> {
         return Err(Error::InvalidUtf8)
     }
 
+    //std::thread::sleep(std::time::Duration::from_secs(5));
+
     Ok(())
 }
 

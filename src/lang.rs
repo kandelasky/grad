@@ -14,6 +14,7 @@ pub enum Token {
     StringLiteral(String),
     Integer(i32),
     Float(f32),
+    Null,
 
     Assign, // =
     DollarSign, // $
@@ -21,7 +22,7 @@ pub enum Token {
     Substract, // -
     Multiply, // *
     Divide, // /
-    PowerOf, // ^
+    Exponent, // ^
     Remainder, // %
     VerticalLine, // |
     Ampersand, // &
@@ -60,7 +61,7 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
             '-' => { tokens.push(Token::Substract); next!(); }
             '*' => { tokens.push(Token::Multiply); next!(); }
             '/' => { tokens.push(Token::Divide); next!(); }
-            '^' => { tokens.push(Token::PowerOf); next!(); }
+            '^' => { tokens.push(Token::Exponent); next!(); }
             '%' => { tokens.push(Token::Remainder); next!(); }
             '&' => { tokens.push(Token::Ampersand); next!(); }
             '|' => { tokens.push(Token::VerticalLine); next!(); }
@@ -94,7 +95,13 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
                     ident.push(c);
                     next!();
                 }
-                tokens.push(Token::Identifier(ident));
+                tokens.push(
+                    if ident == *"null" {
+                        Token::Null
+                    } else {
+                        Token::Identifier(ident)
+                    }
+                );
             },
 
             _ if ch.is_ascii_digit() => {
@@ -129,23 +136,23 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
     let mut tokens_ = {
         let mut tokens = toks.to_vec();
         for (at, token) in toks.iter().enumerate() {
+            //dbg!(token);
             if let Token::Identifier(id) = token {
-                let id = id.to_ascii_lowercase();
-                if id == *"true" {
-                    tokens[at] = Token::Integer(1)
-                } else if id == *"false" {
-                    tokens[at] = Token::Integer(0)
+                //eprintln!("replaced");
+                if id == "true" {
+                    tokens[at] = Token::Integer(1);
+                } else if id == "false" {
+                    tokens[at] = Token::Integer(0);
                 }
             }
         }
-        //println!("{:#?}", tokens);
         tokens
     };
 
     // 2. replace variables with theirs value
     tokens_ = if let Some(variables) = variables {
-        let mut tokens = tokens_.clone(); drop(tokens_);
-        for (at, token) in toks.iter().enumerate() {
+        let mut tokens = tokens_.clone();
+        for (at, token) in tokens_.iter().enumerate() {
             if let Token::Identifier(id) = token {
                 if let Some(var) = variables.get(id) {
                     match var.value {
@@ -158,7 +165,6 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
                 }
             }
         }
-        //println!("{:#?}", tokens);
         tokens
     } else {
         // do nothing
@@ -177,16 +183,30 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
             Token::Substract => "-",
             Token::Multiply => "*",
             Token::Divide => "/",
-            Token::PowerOf => "^",
+            Token::Exponent => "^",
             Token::Remainder => "%",
             Token::Ampersand => "&",
             Token::VerticalLine => "|",
+            Token::Dot => ".",
+            Token::Comma => ",",
+            Token::OpenParen => "(",
+            Token::CloseParen => ")",
             _ => return Err(ErrorType::InvalidExpr)
         };
         result.push_str(pusheen);
     }
 
     Ok(result)
+}
+
+pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
+    let mut result: Vec<&[Token]> = Vec::new();
+
+    for sl in toks.split(|tok| *tok == Token::Comma) {
+        result.push(sl);
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -196,7 +216,7 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn exprify_simple() {
+    fn exprify_simple() {
         let toks = [
             Token::Integer(2),
             Token::Add,
@@ -208,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    pub fn exprify_variables() {
+    fn exprify_variables() {
         let mut variables = HashMap::new();
         variables.insert(String::from("var1"), Variable::new(Value::Int32(2), false));
         variables.insert(String::from("var2"), Variable::new(Value::Int32(3), false));

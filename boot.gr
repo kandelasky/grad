@@ -1,0 +1,6 @@
+# single value assignment:
+my_var = 42
+# check that my_var == 42
+assert_eq my_var, 42
+
+dbg_vars
