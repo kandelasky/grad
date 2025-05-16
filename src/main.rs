@@ -14,7 +14,7 @@ enum Error {
 
 #[macroquad::main(window_config)]
 async fn main() -> Result<(), Error> {
-    eprintln!("Grad v{}", consts::VERSION_STR);
+    //eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     let path = Path::new("boot.gr");
 

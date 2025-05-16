@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{mem::{self, Value}, shell::ErrorType};
+use crate::{mem::{self, Value}, shell::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenizeError {
@@ -199,6 +199,53 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
     Ok(result)
 }
 
+pub fn eval(expr: &str) -> Result<Value, (ErrorType, Option<String>)> {
+    match evalexpr::eval(expr) {
+        Ok(value) => {
+            match value {
+                evalexpr::Value::Int(int) => match i32::try_from(int) {
+                    Ok(value) => Ok(Value::Int32(value)),
+                    Err(_) => { Err((ErrorType::IntOverflow, Some("result of the expression caused integer overflow".to_string()))) }
+                },
+                evalexpr::Value::Float(fl) => {
+                    let fl = fl as f32;
+                    if fl.is_finite() {
+                        Ok(Value::Float32(fl))
+                    } else {
+                        Err((ErrorType::FloatOverflow, Some("result of the expression caused float overflow".to_string())))
+                    }
+                },
+                evalexpr::Value::Boolean(b) => {
+                    Ok(Value::Int32( if b { 1 } else { 0 } ))
+                }
+                evalexpr::Value::Empty => {
+                    Err((ErrorType::ExpectedExpr, None))
+                }
+                _ => panic!("uncovered type in match(eval(&expr)): {:?}", value)
+            }
+        }
+        Err(_) => { Err((ErrorType::InvalidExpr, Some("when evaluating the expression".to_string()))) }
+    }
+}
+
+pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>>) -> Result<bool, (ErrorType, Option<String>)> {
+    let expr = match exprify(toks, variables) {
+        Ok(expr) => expr,
+        Err(error) => { return Err((error, None)) }
+    };
+
+    match eval(&expr) {
+        Ok(value) => match value {
+            mem::Value::Int32(int) => Ok(int > 0),
+            mem::Value::Float32(float) => Ok(float > 0.),
+            mem::Value::Str(_) => panic!("a wild mem::Value::Str(_) has appeared!")
+        }
+        Err((error, note)) => {
+            Err((error, note))
+        }
+    }
+}
+
 pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
     let mut result: Vec<&[Token]> = Vec::new();
 
@@ -208,6 +255,34 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
 
     result
 }
+
+/* pub fn fetch_blocks(lines: &str) -> Result<HashMap<usize, Vec<String>>, (usize, shell::ErrorType)> {
+    let mut blocks: HashMap<usize, Vec<String>> = HashMap::new();
+    let mut stack: Vec<usize> = Vec::new();
+
+    for (at, line) in lines.lines().enumerate() {
+        let tokens = match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue },
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(ch) => { return Err((at, ErrorType::InvalidChar(ch))) },
+                    TokenizeError::IntegerOverflow => { return Err((at, ErrorType::IntOverflow)) },
+                }
+            }
+        };
+
+        if let Some(Token::Identifier(ident)) = tokens.last() {
+            if ident != "do" {
+                continue
+            } else {
+                stack.push(at);
+                blocks.insert(at, Vec::new());
+            }
+        }
+    }
+
+    Ok(blocks)
+} */
 
 #[cfg(test)]
 mod tests {

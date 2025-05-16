@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 
 use colored::Colorize;
-use evalexpr::*;
 
 use crate::{
-    lang::*,
+    lang::{self, *},
     mem,
-    shell::{*, ErrorType::*, ReportType::*}
+    shell::{ErrorType::*, ReportType::*, *}
 };
 
+const DEBUG: bool = false;
+
 pub fn exec(source: String) {
+    let lines: Vec<&str> = source.lines().collect();
+    let lines_max = lines.len();
+
     let mut variables: HashMap<String, mem::Variable> = HashMap::new();
 
     // constants:
@@ -17,20 +21,36 @@ pub fn exec(source: String) {
         (String::from("INT_MAX"), (mem::Value::Int32(i32::MAX), false)),
     ]);
 
-    for (ident, (value, is_pointer)) in constants {
-        variables.insert(ident, mem::Variable::new(value, is_pointer));
+    for (ident, (value, is_pointer)) in &constants {
+        variables.insert(ident.to_string(), mem::Variable::new(value.clone(), *is_pointer));
     }
+
+    let mut controls: Vec<(Vec<Token>, bool /* infinite? */, usize /* start line (after the control) */)> = Vec::new();
     
-    'l: for (at, line) in source.lines().enumerate() {
-        macro_rules! report {
-            ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at+1, $w, $n);
+    let mut at: usize = 0;
+    'l: while at < lines_max {
+        let line = lines[at];
+
+        if DEBUG {
+            eprintln!("[{}]\t{}", at+1, line);
+        }
+
+        macro_rules! next {
+            () => {
+                at += 1;
                 continue 'l;
             };
         }
 
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, at, $w, $n);
+                next!();
+            };
+        }
+        
         let tokens = match tokenize(line) {
-            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue 'l; },
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { next!(); },
             Err(err) => {
                 match err {
                     TokenizeError::InvalidCharacter(ch) => { report!(Error, InvalidChar(ch), None); },
@@ -38,11 +58,11 @@ pub fn exec(source: String) {
                 }
             }
         };
-
+        
         macro_rules! get_args {
             ($expected:expr) => {{
                 let args = get_args(&tokens[1..]);
-
+                
                 if args.len() > $expected {
                     report!(Error, LeftoverArgs($expected), None);
                 } else if args.len() < $expected {
@@ -52,7 +72,7 @@ pub fn exec(source: String) {
                 }
             }};
         }
-
+        
         let calling = {
             let first_token = &tokens[0];
             match first_token {
@@ -63,18 +83,104 @@ pub fn exec(source: String) {
             }
         };
 
+        if let Some((condition, _, _)) = controls.last() {
+            let mets = match lang::slice_cmp(condition, Some(&variables)) {
+                Ok(b) => b,
+                Err((error, note)) => {
+                    report!(Error, error, note.as_deref());
+                }
+            };
+
+            if !mets && calling != "end" {
+                next!();
+            }
+        }
+        
         match calling.as_str() {
-            // <- add built-in functions here
+            // == Controls ====================================================
+            "if" => {
+                let origin = at + 1;
+                if origin < lines_max {
+                    if let Some(toks) = tokens.get(1..) {
+                        let mets = match lang::slice_cmp(toks, Some(&variables)) {
+                            Ok(b) => b,
+                            Err((error, note)) => {
+                                report!(Error, error, note.as_deref());
+                            }
+                        };
+
+                        let v = if mets {
+                            vec![Token::Integer(1)]
+                        } else {
+                            vec![Token::Integer(0)]
+                        };
+
+                        controls.push((v, false, origin));
+                    } else {
+                        report!(Error, ExpectedExpr, None);
+                    };
+                } else {
+                    report!(Error, UnexpectedEOF, None);
+                }
+            }
+            "end" => {
+                if let Some((condition, is_loop, start)) = controls.pop() {
+                    if is_loop {
+                        let mets = match lang::slice_cmp(&condition, Some(&variables)) {
+                            Ok(b) => b,
+                            Err((error, note)) => {
+                                report!(Error, error, note.as_deref());
+                            }
+                        };
+
+                        if mets {
+                            at = start
+                        }
+                    }
+                } else {
+                    report!(Error, UnmatchedEnd, None);
+                }
+            }
+            // == Built-in fns ================================================
+            "println" | "print" => {
+                let args = get_args(&tokens[1..]);
+                for arg in &args {
+                    if arg.len() == 1 {
+                        match &arg[0] {
+                            Token::Identifier(ident) => {
+                                if let Some(var) = variables.get(ident) {
+                                    match &var.value {
+                                        mem::Value::Int32(int) => print!("{int}"),
+                                        mem::Value::Float32(fl) => print!("{fl}"),
+                                        mem::Value::Str(string) => print!("{string}"),
+                                    }
+                                } else {
+                                    report!(Error, UndefinedVariable(ident.to_string()), None);
+                                }
+                            }
+                            Token::StringLiteral(string) => print!("{string}"),
+                            Token::Integer(int) => print!("{int}"),
+                            Token::Float(fl) => print!("{fl}"),
+                            _ => { report!(Error, InvalidExpr, None); }
+                        }
+                    }
+                }
+                if calling == "println" {
+                    println!();
+                } else if args.is_empty() {
+                    report(Warning, at, UselessPrint, None);
+                }
+            }
             "assert_eq" => {
                 let args = get_args!(2);
 
                 let left_eval = {
                     let expr = match exprify(args[0], Some(&variables)) {
                         Ok(expr) => expr,
-                        Err(error) => { report!(Error, error, Some("found when parsing the first expression")); }
+                        Err(error) => { report!(Error, error, Some("when parsing the first expression")); }
                     };
 
-                    match mem::eval(&expr) {
+                    match lang::eval(&expr) {
                         Ok(value) => value,
                         Err((error, note)) => { report!(Error, error, note.as_deref()); }
                     }
@@ -83,10 +189,10 @@ pub fn exec(source: String) {
                 let right_eval = {
                     let expr = match exprify(args[1], Some(&variables)) {
                         Ok(expr) => expr,
-                        Err(error) => { report!(Error, error, Some("found when parsing the second expression")); }
+                        Err(error) => { report!(Error, error, Some("when parsing the second expression")); }
                     };
 
-                    match mem::eval(&expr) {
+                    match lang::eval(&expr) {
                         Ok(value) => value,
                         Err((error, note)) => { report!(Error, error, note.as_deref()); }
                     }
@@ -101,85 +207,96 @@ pub fn exec(source: String) {
                 //                  |------------- 32 -------------|
                 const LINE: &str = "--------------------------------\n";
 
-                println!("\n{LINE}[dbg_vars] list of the all existing variables:\n\nID\tVALUE\t\tPTR");
+                println!("\n{LINE}*ID\t\tVALUE");
                 for (ident, var) in &variables {
-                    println!("{}\t{:?}\t{}", ident, var.value, var.is_pointer);
+                    if !constants.contains_key(ident) {
+                        println!("{}{}\t\t{:?}", if var.is_pointer { '*' } else { ' ' }, ident, var.value);
+                    }
                 }
                 println!("{LINE}\n");
             }
             _ => {
+                const MAX_IDENT_LENGTH: usize = 32;
+                if calling.len() > MAX_IDENT_LENGTH {
+                    report!(Error, TooLongIdent(MAX_IDENT_LENGTH), None);
+                }
+
                 let var_exist = variables.contains_key(calling);
 
-                let op = if let Some(tok) = tokens.get(1) {
-                    let allowed = [
-                        Token::Assign,
-                        Token::Add,
-                        Token::Substract,
-                        Token::Multiply,
-                        Token::Divide,
-                        Token::Remainder,
-                        Token::Exponent
-                    ];
-
-                    if !allowed.contains(tok) {
-                        report!(Error, InvalidOp, None);
+                if false /* fn_exist */ {
+                    // call fn
+                } else {
+                    if constants.contains_key(calling) {
+                        report(Warning, at, ConstRedefinition(calling.to_string()), None);
                     }
 
-                    if tok != &Token::Assign && !var_exist {
-                        report!(Error, UndefinedVariable(String::from(calling)), None);
-                    }
+                    let op = if let Some(tok) = tokens.get(1) {
+                        let allowed = [
+                            Token::Assign,
+                            Token::Add,
+                            Token::Substract,
+                            Token::Multiply,
+                            Token::Divide,
+                            Token::Remainder,
+                            Token::Exponent
+                        ];
 
-                    tok
-                } else {
-                    report!(Error, ExpectedOp, None);
-                };
-
-                let expr = if let Some(toks) = tokens.get(2..) {
-                    toks
-                } else {
-                    report!(Error, ExpectedExpr, None);
-                };
-
-                if expr.len() == 1 {
-                    let calling = calling.to_string();
-                    match expr.first().unwrap() {
-                        Token::Identifier(ident) => {
-                            let ident = ident.as_str();
-                            match ident {
-                                "null" => {
-                                    // if pointer - remove container
-                                    variables.remove(&calling);
-                                }
-                                "true" | "false" => {
-                                    let value = mem::Value::Int32(if ident == "true" { 1 } else { 0 });
-                                    variables.insert(calling, mem::Variable::new(value, false));
-                                },
-                                _ => {
-                                    if variables.contains_key(ident) {
-                                        variables.insert(calling, variables.get(ident).unwrap().clone());
-                                    } else {
-                                        report!(Error, UndefinedVariable(ident.to_string()), None);
-                                    }
-                                }
-                            }
+                        if !allowed.contains(tok) {
+                            report!(Error, InvalidOp, None);
                         }
-                        Token::Integer(int) => {
-                            variables.insert(calling, mem::Variable::new(mem::Value::Int32(*int), false));
-                        }
-                        Token::StringLiteral(string) => {
-                            variables.insert(calling, mem::Variable::new(mem::Value::Str(string.to_string()), false));
-                        }
-                        _ => { /* report!(Error, InvalidExpr, None); */ }
-                    }
-                } else {
-                    // the code below may be replaced with mem::eval(expr)
 
-                    let expr = match exprify(tokens.get(2..).unwrap(), Some(&variables)) {
-                        Ok(expr) => expr,
-                        Err(error) => { report!(Error, error, Some("found when parsing the expression")); }
+                        if tok != &Token::Assign && !var_exist {
+                            report!(Error, UndefinedVariable(String::from(calling)), None);
+                        }
+
+                        tok
+                    } else {
+                        report!(Error, ExpectedOp, None);
                     };
 
-                    match eval(&expr) {
+                    let toks = if let Some(toks) = tokens.get(2..) {
+                        toks
+                    } else {
+                        report!(Error, ExpectedExpr, None);
+                    };
+
+                    if toks.len() == 1 {
+                        match &toks[0] {
+                            Token::Identifier(ident) => match ident.as_str() {
+                                "true" | "false" => {
+                                    let value = mem::Value::Int32( if ident == "true" { 1 } else { 0 } );
+                                    variables.insert(calling.to_string(), mem::Variable::new(value, false));
+                                    next!();
+                                },
+                                _ => {}
+                            }
+                            Token::Null => {
+                                // <- TODO: if this is pointer - remove container
+                                variables.remove(calling);
+                                next!();
+                            }
+                            /* Token::Integer(int) => {
+                                variables.insert(calling.to_string(), mem::Variable::new(mem::Value::Int32(*int), false));
+                                next!();
+                            },
+                            Token::Float(fl) => {
+                                variables.insert(calling.to_string(), mem::Variable::new(mem::Value::Float32(*fl), false));
+                                next!();
+                            }, */
+                            Token::StringLiteral(string) => {
+                                variables.insert(calling.to_string(), mem::Variable::new(mem::Value::Str(string.to_string()), false));
+                                next!();
+                            },
+                            _ => { /* report!(Error, InvalidExpr, None); */ }
+                        }
+                    }
+
+                    let expr = match exprify(toks, Some(&variables)) {
+                        Ok(expr) => expr,
+                        Err(error) => { report!(Error, error, Some("when parsing the expression")); }
+                    };
+
+                    match evalexpr::eval(&expr) {
                         Ok(value) => {
                             let evaluaion = match value {
                                 evalexpr::Value::Int(int) => match i32::try_from(int) {
@@ -200,7 +317,7 @@ pub fn exec(source: String) {
                                 _ => panic!("uncovered type in match(eval(&expr)): {:?}", value)
                             };
     
-                            let v = if let Token::Assign = op {
+                            let v = if op == &Token::Assign {
                                 evaluaion
                             } else {
                                 let og_value = &variables.get_mut(calling).unwrap().value;
@@ -230,7 +347,7 @@ pub fn exec(source: String) {
                                                 report!(Error, IntOverflow, Some("when doing compound assignment"));
                                             }
                                         } else {
-                                            report!(Error, MismTypes, Some("expected type of expression: integer"));
+                                            report!(Error, MismTypes, Some("expected type of the expression: integer"));
                                         }
                                     }
                                     mem::Value::Float32(og_float) => {
@@ -246,19 +363,21 @@ pub fn exec(source: String) {
                                             };
                                             mem::Value::Float32(result)
                                         } else {
-                                            report!(Error, MismTypes, Some("expected type of expression: float"));
+                                            report!(Error, MismTypes, Some("expected type of the expression: float"));
                                         }
                                     }
                                     _ => panic!()
                                 }
                             };
-    
+
                             variables.insert(calling.to_string(), mem::Variable::new(v, false));
                         }
-                        Err(_) => { report!(Error, InvalidExpr, Some("when evaluating expression")); }
+                        Err(_) => { report!(Error, InvalidExpr, Some("when evaluating the expression")); }
                     }
                 }
             }
         }
+
+        next!();
     }
 }

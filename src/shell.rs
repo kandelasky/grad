@@ -23,11 +23,16 @@ pub enum ErrorType {
     ExpectedIdent,
     ExpectedOp,
     ExpectedExpr,
+    UnexpectedEOF,
+    UnmatchedEnd,
 
     UndefinedVariable(String),
-    ConstRedefinition(String),
     NotEnoughArgs(u16 /* expected */),
     LeftoverArgs(u16 /* expected */),
+    TooLongIdent(usize /* max */),
+
+    ConstRedefinition(String),
+    UselessPrint,
 }
 
 impl fmt::Display for ErrorType {
@@ -47,11 +52,16 @@ impl fmt::Display for ErrorType {
             ExpectedIdent => "ExpectedIdentifier",
             ExpectedOp => "ExpectedOperator",
             ExpectedExpr => "ExpectedExpression",
+            UnexpectedEOF => "UnexpectedEOF",
+            UnmatchedEnd => "UnmatchedEnd",
 
             UndefinedVariable(_) => "UndefinedVariable",
-            ConstRedefinition(_) => "ConstRedefinition",
             NotEnoughArgs(_) => "NotEnoughArguments",
             LeftoverArgs(_) => "LeftoverArguments",
+            TooLongIdent(_) => "TooLongIdentifier",
+
+            ConstRedefinition(_) => "ConstRedefinition",
+            UselessPrint => "UselessPrint",
         };
 
         write!(f, "{}", string)
@@ -81,26 +91,33 @@ impl ErrorType {
             ExpectedIdent => s!("expected identifier"),
             ExpectedOp => s!("expected operator"),
             ExpectedExpr => s!("expected expression"),
+            UnexpectedEOF => s!("unexpected end of file"),
+            UnmatchedEnd => format!("unmatched control statement: {}", "end".bold()),
 
-            UndefinedVariable(name) => format!("undefined variable: {}", name.to_string().bold()),
-            ConstRedefinition(name) => format!("redefintion of constant: {}", name.to_string().bold()),
+            UndefinedVariable(name) => format!("undefined variable: {}", name.bold()),
             NotEnoughArgs(expected) => format!("not enough arguments: this function takes {}", expected.to_string().bold()),
             LeftoverArgs(expected) => format!("leftover arguments: this function takes {}", expected.to_string().bold()),
+            TooLongIdent(max) => format!("too long identifier, max length is {} characters", max.to_string().bold()),
+
+            ConstRedefinition(name) => format!("redefintion of constant: {}", name.bold()),
+            UselessPrint => format!("useless use of {} function", "print".bold()),
         }
     }
 }
 
-pub type Report = (ErrorType, Option<String>);
+//pub type Report = (ErrorType, Option<&str>);
 
 pub fn report(rtype: ReportType, line: usize, what: ErrorType, note: Option<&str>) {
     let rtype = match rtype {
         ReportType::Error => "error".bold().red(),
-        ReportType::Warning => "warning".bold().red(),
+        ReportType::Warning => "warning".bold().yellow(),
     };
 
-    eprintln!("\n{rtype}: line {}:\n  {}: {}", line, what.to_string().bold(), what.describe());
+    eprintln!("{rtype}: line {}:\n  {}: {}", line, what.to_string().bold(), what.describe());
 
     if let Some(text) = note {
         eprintln!("{}: {}", "note".bold().cyan(), text);
     }
+
+    eprintln!();
 }
