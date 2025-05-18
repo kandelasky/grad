@@ -12,8 +12,8 @@ enum Error {
     InvalidUtf8
 }
 
-#[macroquad::main(window_config)]
-async fn main() -> Result<(), Error> {
+//#[macroquad::main(window_config)]
+/* async */ fn main() -> Result<(), Error> {
     //eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     let path = Path::new("boot.gr");
@@ -60,6 +60,7 @@ impl Default for GradConfig {
     }
 }
 
+#[allow(dead_code)]
 fn window_config() -> mq::Conf {
     let conf = if let Ok(conf) = confy::load::<GradConfig>("grad", None) {
         conf

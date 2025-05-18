@@ -5,7 +5,8 @@ use colored::Colorize;
 use crate::{
     lang::{self, *},
     mem,
-    shell::{ErrorType::*, ReportType::*, *}
+    shell::{ErrorType::*, ReportType::*, *},
+    random
 };
 
 const DEBUG: bool = false;
@@ -25,7 +26,7 @@ pub fn exec(source: String) {
         variables.insert(ident.to_string(), mem::Variable::new(value.clone(), *is_pointer));
     }
 
-    let mut controls: Vec<(Vec<Token>, bool /* infinite? */, usize /* start line (after the control) */)> = Vec::new();
+    let mut controls: Vec<(Vec<Token> /* comparator */, bool /* do? */, bool /* loop? */, usize /* origin */)> = Vec::new();
     
     let mut at: usize = 0;
     'l: while at < lines_max {
@@ -44,7 +45,7 @@ pub fn exec(source: String) {
 
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at, $w, $n);
+                report($rt, at+1, $w, $n);
                 next!();
             };
         }
@@ -55,6 +56,7 @@ pub fn exec(source: String) {
                 match err {
                     TokenizeError::InvalidCharacter(ch) => { report!(Error, InvalidChar(ch), None); },
                     TokenizeError::IntegerOverflow => { report!(Error, IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(Error, FloatOverflow, None); },
                 }
             }
         };
@@ -83,22 +85,15 @@ pub fn exec(source: String) {
             }
         };
 
-        if let Some((condition, _, _)) = controls.last() {
-            let mets = match lang::slice_cmp(condition, Some(&variables)) {
-                Ok(b) => b,
-                Err((error, note)) => {
-                    report!(Error, error, note.as_deref());
-                }
-            };
-
-            if !mets && calling != "end" {
+        if let Some((_, do_, _, _)) = controls.last() {
+            if !do_ && calling != "end" {
                 next!();
             }
         }
         
         match calling.as_str() {
             // == Controls ====================================================
-            "if" => {
+            "if" | "while" => {
                 let origin = at + 1;
                 if origin < lines_max {
                     if let Some(toks) = tokens.get(1..) {
@@ -108,14 +103,21 @@ pub fn exec(source: String) {
                                 report!(Error, error, note.as_deref());
                             }
                         };
-
-                        let v = if mets {
-                            vec![Token::Integer(1)]
+                        let (v, do_, is_loop) = if calling == "if" {
+                            (
+                                if mets {
+                                    vec![Token::Integer(1)]
+                                } else {
+                                    vec![Token::Integer(0)]
+                                },
+                                mets,
+                                false
+                            )
                         } else {
-                            vec![Token::Integer(0)]
+                            (toks.to_vec(), mets, true)
                         };
 
-                        controls.push((v, false, origin));
+                        controls.push((v, do_, is_loop, origin));
                     } else {
                         report!(Error, ExpectedExpr, None);
                     };
@@ -123,10 +125,11 @@ pub fn exec(source: String) {
                     report!(Error, UnexpectedEOF, None);
                 }
             }
+            // <- `repeat`
             "end" => {
-                if let Some((condition, is_loop, start)) = controls.pop() {
-                    if is_loop {
-                        let mets = match lang::slice_cmp(&condition, Some(&variables)) {
+                if let Some((condition, do_, is_loop, start)) = controls.last() {
+                    if *is_loop && *do_ {
+                        let mets = match lang::slice_cmp(condition, Some(&variables)) {
                             Ok(b) => b,
                             Err((error, note)) => {
                                 report!(Error, error, note.as_deref());
@@ -134,8 +137,13 @@ pub fn exec(source: String) {
                         };
 
                         if mets {
-                            at = start
+                            at = *start;
+                            continue 'l;
+                        } else {
+                            controls.pop();
                         }
+                    } else {
+                        controls.pop();
                     }
                 } else {
                     report!(Error, UnmatchedEnd, None);
@@ -215,6 +223,7 @@ pub fn exec(source: String) {
                 }
                 println!("{LINE}\n");
             }
+            // ================================================================
             _ => {
                 const MAX_IDENT_LENGTH: usize = 32;
                 if calling.len() > MAX_IDENT_LENGTH {

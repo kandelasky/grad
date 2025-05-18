@@ -2,7 +2,7 @@
 # Output
 
 println "Welcome to Grad!"
-println "Today's lucky number is ... ", 42, "!"
+println "Various numbers can be passed to print: ", 42, "; ", 3.14
 
 # =============================================================
 # Variables
@@ -34,8 +34,29 @@ assert_eq my_var, 0
 my_var = -42
 assert_eq my_var, -42
 
+# floating point:
 my_var = -4.2
 assert_eq my_var, -4.2
+
+# =============================================================
+# Control flow
+
+if 1 == 1
+    if 1
+        if true
+            println "[if control block]"
+            if false
+                println "[nothing here]"
+            end
+        end
+    end
+end
+
+i = 0
+while i < 10
+    println "repeat: ", i
+    i + 1
+end
 
 # =============================================================
 # Special functions

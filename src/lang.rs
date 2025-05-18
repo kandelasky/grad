@@ -5,7 +5,8 @@ use crate::{mem::{self, Value}, shell::*};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenizeError {
     InvalidCharacter(char),
-    IntegerOverflow /* (usize) */
+    IntegerOverflow /* (usize) */,
+    FloatParseError
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -128,7 +129,39 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
         }
     }
 
+    let tokens = process_floats(&tokens)?;
+
     Ok(tokens)
+}
+
+// sorry for using AI code :(
+fn process_floats(tokens: &[Token]) -> Result<Vec<Token>, TokenizeError> {
+    let mut result = Vec::new();
+    let n = tokens.len();
+    
+    let mut i = 0;
+    while i < n {
+        if i + 2 < n {
+            if let (Token::Integer(whole), Token::Dot, Token::Integer(fractional)) = 
+                (&tokens[i], &tokens[i+1], &tokens[i+2]) 
+            {
+                if let Ok(number) = format!("{}.{}", whole, fractional).parse::<f32>() {
+                    if number.is_infinite() {
+                        return Err(TokenizeError::FloatParseError)
+                    }
+                    result.push(Token::Float(number));
+                    i += 3;
+                    continue
+                } else {
+                    return Err(TokenizeError::FloatParseError)
+                }
+            }
+        }
+        result.push(tokens[i].clone());
+        i += 1;
+    }
+
+    Ok(result)
 }
 
 pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>>) -> Result<String, ErrorType> {
@@ -187,6 +220,8 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
             Token::Remainder => "%",
             Token::Ampersand => "&",
             Token::VerticalLine => "|",
+            Token::MoreThan => ">",
+            Token::LessThan => "<",
             Token::Dot => ".",
             Token::Comma => ",",
             Token::OpenParen => "(",
