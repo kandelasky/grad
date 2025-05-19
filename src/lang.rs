@@ -134,7 +134,7 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
     Ok(tokens)
 }
 
-// sorry for using AI code :(
+// sorry for using AI generated code :(
 fn process_floats(tokens: &[Token]) -> Result<Vec<Token>, TokenizeError> {
     let mut result = Vec::new();
     let n = tokens.len();
@@ -165,7 +165,7 @@ fn process_floats(tokens: &[Token]) -> Result<Vec<Token>, TokenizeError> {
 }
 
 pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>>) -> Result<String, ErrorType> {
-    // 1. replace `true` and `false` with 1/0
+    // 1. replace `true` with 1 and `false` with 0
     let mut tokens_ = {
         let mut tokens = toks.to_vec();
         for (at, token) in toks.iter().enumerate() {
@@ -290,6 +290,19 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
 
     result
 }
+
+/*
+    escape sequences:
+
+    case 'a': str[ w ] = 0x07; break; // alert
+    case 'b': str[ w ] = 0x08; break; // backspace
+    case 't': str[ w ] = 0x09; break; // tab
+    case 'r': str[ w ] = 0x0D; break; // carriage-return
+    case 'n': str[ w ] = 0x0A; break; // newline
+    case 'v': str[ w ] = 0x0B; break; // vertical-tab
+    case 'f': str[ w ] = 0x0C; break; // form-feed
+    case 'e': str[ w ] = 0x1B; break; // escape character
+*/
 
 /* pub fn fetch_blocks(lines: &str) -> Result<HashMap<usize, Vec<String>>, (usize, shell::ErrorType)> {
     let mut blocks: HashMap<usize, Vec<String>> = HashMap::new();

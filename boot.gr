@@ -38,13 +38,21 @@ assert_eq my_var, -42
 my_var = -4.2
 assert_eq my_var, -4.2
 
+# check that variable exists:
+assert_exists my_var
+
+# delete multiple variables at once with the `nullean` function:
+var_1 = 1
+var_2 = 22
+nullean var_1 var_2 my_var
+
 # =============================================================
 # Control flow
 
 if 1 == 1
     if 1
         if true
-            println "[if control block]"
+            println "Hello from `if`!"
             if false
                 println "[nothing here]"
             end
@@ -52,10 +60,23 @@ if 1 == 1
     end
 end
 
+# simple repeat pattern:
 i = 0
-while i < 10
-    println "repeat: ", i
+max = 10
+while i < max
     i + 1
+end
+i = null
+max = null
+
+if true
+    if true
+        # variable defined in this scope ...
+        hidden = 42
+    end
+    # ... is unaccessible in outer scope!
+    # this will fail:
+    # assert_exists hidden
 end
 
 # =============================================================

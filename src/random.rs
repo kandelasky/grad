@@ -1,10 +1,9 @@
-use rand::Rng;
+use rand::prelude::*;
 
-pub fn chars(length: usize) -> String {
-    (0..length)
-        .map(|_| {
-            let range = if rand::random() { b'a'..=b'z' } else { b'A'..=b'Z' };
-            rand::rng().random_range(range) as char
-        })
-        .collect()
+pub fn uuid() -> String {
+    format!("0x{:X}", ThreadRng::default().random::<u128>())
+}
+
+pub fn range_int(from: i32, to: i32) -> i32 {
+    ThreadRng::default().random_range(from..to)
 }

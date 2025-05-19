@@ -1,25 +1,42 @@
-use std::collections::HashMap;
-
+use std::collections::{HashMap, HashSet};
 use colored::Colorize;
 
 use crate::{
     lang::{self, *},
     mem,
     shell::{ErrorType::*, ReportType::*, *},
-    random
+    // random
 };
 
-const DEBUG: bool = false;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RunConfig {
+    exec_line_debug: bool,
+    mem_debug: bool,
+}
 
 pub fn exec(source: String) {
+    // this will be moved to exec() arguments in the future:
+    let config: RunConfig = RunConfig {
+        exec_line_debug: false,
+        mem_debug: false,
+    };
+
+    //let source = source_.replace(";", "\n"); drop(source_);
+
     let lines: Vec<&str> = source.lines().collect();
     let lines_max = lines.len();
 
     let mut variables: HashMap<String, mem::Variable> = HashMap::new();
 
+    const MAX_SCOPES: usize = 256;
+    let mut scopes: HashMap<usize, HashSet<String>> = HashMap::new();
+    scopes.insert(0, HashSet::new());
+
+    // let mut mem_log: bool = false;
+
     // constants:
     let constants = HashMap::from([
-        (String::from("INT_MAX"), (mem::Value::Int32(i32::MAX), false)),
+        ( String::from("INT_MAX"), (mem::Value::Int32(i32::MAX), false) ),
     ]);
 
     for (ident, (value, is_pointer)) in &constants {
@@ -32,7 +49,7 @@ pub fn exec(source: String) {
     'l: while at < lines_max {
         let line = lines[at];
 
-        if DEBUG {
+        if config.exec_line_debug {
             eprintln!("[{}]\t{}", at+1, line);
         }
 
@@ -93,6 +110,7 @@ pub fn exec(source: String) {
         
         match calling.as_str() {
             // == Controls ====================================================
+
             "if" | "while" => {
                 let origin = at + 1;
                 if origin < lines_max {
@@ -103,6 +121,7 @@ pub fn exec(source: String) {
                                 report!(Error, error, note.as_deref());
                             }
                         };
+
                         let (v, do_, is_loop) = if calling == "if" {
                             (
                                 if mets {
@@ -117,7 +136,12 @@ pub fn exec(source: String) {
                             (toks.to_vec(), mets, true)
                         };
 
-                        controls.push((v, do_, is_loop, origin));
+                        if controls.len() < MAX_SCOPES {
+                            controls.push((v, do_, is_loop, origin));
+                            scopes.insert(controls.len(), HashSet::new());
+                        } else {
+                            report!(Error, TooDeepControl, None);
+                        }
                     } else {
                         report!(Error, ExpectedExpr, None);
                     };
@@ -125,12 +149,18 @@ pub fn exec(source: String) {
                     report!(Error, UnexpectedEOF, None);
                 }
             }
-            // <- `repeat`
+
+            /* "repeat" => {
+                let var = if let Some(Token::Identifier(ident)) = tokens.get(1) {};
+            } */
+
             "end" => {
                 if let Some((condition, do_, is_loop, start)) = controls.last() {
+                    let pop;
+
                     if *is_loop && *do_ {
                         let mets = match lang::slice_cmp(condition, Some(&variables)) {
-                            Ok(b) => b,
+                            Ok(boo) => boo,
                             Err((error, note)) => {
                                 report!(Error, error, note.as_deref());
                             }
@@ -140,16 +170,36 @@ pub fn exec(source: String) {
                             at = *start;
                             continue 'l;
                         } else {
-                            controls.pop();
+                            pop = true;
                         }
                     } else {
+                        pop = true;
+                    }
+
+                    if pop {
+                        let trunc_vars = scopes.get(&controls.len()).unwrap();
+
+                        if !trunc_vars.is_empty() {
+                            if config.mem_debug {
+                                let len = trunc_vars.len();
+                                println!("\n{} {} {} variable{}", "auto".bold(), "deleting".bold().red(), len, if len > 1 { 's' } else { ' ' });
+                            }
+    
+                            for id in trunc_vars {
+                                variables.remove(id);
+                            }
+                        }
+
+                        scopes.remove(&controls.len());
                         controls.pop();
                     }
                 } else {
                     report!(Error, UnmatchedEnd, None);
                 }
             }
+
             // == Built-in fns ================================================
+
             "println" | "print" => {
                 let args = get_args(&tokens[1..]);
                 for arg in &args {
@@ -179,6 +229,7 @@ pub fn exec(source: String) {
                     report(Warning, at, UselessPrint, None);
                 }
             }
+
             "assert_eq" => {
                 let args = get_args!(2);
 
@@ -211,6 +262,19 @@ pub fn exec(source: String) {
                     break 'l
                 }
             }
+
+            "assert_exists" => {
+                if let Some(token) = tokens.get(1) {
+                    if let Token::Identifier(ident) = token {
+                        if !variables.contains_key(ident) {
+                            eprintln!("\nline {}: {} {}\n  variable {} not exists", at+1, "assertion".bold(), "failed".bold().red(), ident.bold());
+                        }
+                    } else {
+                        report!(Error, ExpectedIdent, None);
+                    }
+                }
+            }
+
             "dbg_vars" => {
                 //                  |------------- 32 -------------|
                 const LINE: &str = "--------------------------------\n";
@@ -221,12 +285,58 @@ pub fn exec(source: String) {
                         println!("{}{}\t\t{:?}", if var.is_pointer { '*' } else { ' ' }, ident, var.value);
                     }
                 }
+
                 println!("{LINE}\n");
             }
+
+            "nullean" => {
+                if let Some(tokens) = tokens.get(1..) {
+                    for token in tokens {
+                        if let Token::Identifier(ident) = token {
+                            // <- TODO: if this is pointer - remove container
+
+                            let vect = scopes.get_mut(&controls.len()).unwrap();
+
+                            if !vect.remove(ident) || variables.remove(ident).is_none() {
+                                report!(Error, UndefinedVariable(ident.to_string()), None);
+                            }
+                        } else {
+                            report!(Error, ExpectedIdent, None);
+                        }
+                    }
+                }
+            }
+
+            /* "mem_log" => {
+                let args = get_args!(1);
+
+                mem_log = match lang::slice_cmp(args[0], Some(&variables)) {
+                    Ok(b) => b,
+                    Err((error, note)) => {
+                        report!(Error, error, note.as_deref());
+                    }
+                };
+            } */
+            /* "mem_cleanup" => {
+                let mut cleanup = Vec::new();
+                for ident in variables.keys() {
+                    cleanup.push(ident.to_string());
+                }
+
+                let len = cleanup.len();
+                if mem_log && len > 0 {
+                    println!("[mem_cleanup] {} {} variable{}", "deleting".red().bold(), len, if len > 1 { "s" } else { "" });
+                }
+                for item in cleanup {
+                    variables.remove(&item);
+                }
+            } */
+
             // ================================================================
+
             _ => {
                 const MAX_IDENT_LENGTH: usize = 32;
-                if calling.len() > MAX_IDENT_LENGTH {
+                if calling.len() > 32 {
                     report!(Error, TooLongIdent(MAX_IDENT_LENGTH), None);
                 }
 
@@ -281,6 +391,10 @@ pub fn exec(source: String) {
                             }
                             Token::Null => {
                                 // <- TODO: if this is pointer - remove container
+
+                                let vect = scopes.get_mut(&controls.len()).unwrap();
+                                vect.remove(calling);
+
                                 variables.remove(calling);
                                 next!();
                             }
@@ -380,6 +494,24 @@ pub fn exec(source: String) {
                             };
 
                             variables.insert(calling.to_string(), mem::Variable::new(v, false));
+
+                            let defined_outer_scope: bool = {
+                                let mut result: bool = false;
+                                'g: for dive in 0..controls.len() {
+                                    for ident in scopes.get(&dive).unwrap() {
+                                        if ident == calling {
+                                            result = true;
+                                            break 'g;
+                                        }
+                                    }
+                                }
+                                result
+                            };
+
+                            if !defined_outer_scope {
+                                let vect = scopes.get_mut(&controls.len()).unwrap();
+                                vect.insert(calling.to_string());
+                            }
                         }
                         Err(_) => { report!(Error, InvalidExpr, Some("when evaluating the expression")); }
                     }
