@@ -26,7 +26,7 @@ enum Error {
         }
     };
 
-    let is_bytecode = bytes[0..=8] == consts::MAGIC;
+    let is_bytecode = bytes[0..8] == consts::MAGIC;
     if is_bytecode {
         // run_bytecode(SLICE);
     } else if let Ok(source) = String::from_utf8(bytes) {
