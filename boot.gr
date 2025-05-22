@@ -7,44 +7,46 @@ println "Various numbers can be passed to print: ", 42, "; ", 3.14
 # =============================================================
 # Variables
 
-my_var = 42     # create a variable,
-my_var = null   # and remove it!
+var = 42     # create a variable,
+var = null   # and remove it!
 
 # assign any possible type of value to a variable:
-my_var = "string"   # string,
-my_var = 3.14       # float,
-my_var = 42         # and integer
+var = "string"   # string,
+var = 3.14       # float,
+var = 42         # and integer
 # floats and integers are always signed 32-bit numbers,
 # strings are UTF-8 encoded.
 
 # compound assignment operators are supported as well (+=, -=, *=, etc)
 # please note that they are look differently unlike other languages:
-my_var = 0      # assignment (init)
-my_var + 4      # add
-my_var - 2      # substract
-my_var * 8      # multiply
-my_var / 4      # divide
-my_var ^ 2      # exponent
-my_var % 16     # remainder
+var = 0      # assignment (init)
+var + 4      # add
+var - 2      # substract
+var * 8      # multiply
+var / 4      # divide
+var ^ 2      # exponent
+var % 16     # remainder
 # now let's check our calculations:
 # (the last remainder operation must return 0)
-assert_eq my_var, 0
+assert_eq var, 0
 
 # negative values:
-my_var = -42
-assert_eq my_var, -42
+var = -42
+assert_eq var, -42
+println "var = ", var
 
 # floating point:
-my_var = -4.2
-assert_eq my_var, -4.2
+var = -4.2
+assert_eq var, -4.2
+println "var = ", var
 
 # check that variable exists:
-assert_exists my_var
+assert_exists var
 
 # delete multiple variables at once with the `nullean` function:
 var_1 = 1
 var_2 = 22
-nullean var_1 var_2 my_var
+nullean var_1 var_2 var
 
 # =============================================================
 # Control flow
@@ -52,9 +54,12 @@ nullean var_1 var_2 my_var
 if 1 == 1
     if 1
         if true
-            println "Hello from `if`!"
+            msg = "`if` says: hello!"
+            println msg
+
             if false
-                println "[nothing here]"
+                evil_msg = "evil `if` says: ghghrhghhrhhh!!!"
+                println evil_msg
             end
         end
     end
@@ -74,7 +79,7 @@ if true
         # variable defined in this scope ...
         hidden = 42
     end
-    # ... is unaccessible in outer scope!
+    # ... is unaccessible in the outer scope!
     # this will fail:
     # assert_exists hidden
 end
@@ -83,4 +88,4 @@ end
 # Special functions
 
 # prints all existing variables at the moment:
-dbg_vars
+# dbg_vars

@@ -25,8 +25,10 @@ pub enum ErrorType {
     ExpectedExpr,
     UnexpectedEOF,
     UnmatchedEnd,
+    UnterminatedBlock,
 
     UndefinedVariable(String),
+    UnexpectedPointer(String),
     NotEnoughArgs(u16 /* expected */),
     LeftoverArgs(u16 /* expected */),
     TooLongIdent(usize /* max */),
@@ -55,8 +57,10 @@ impl fmt::Display for ErrorType {
             ExpectedExpr => "ExpectedExpression",
             UnexpectedEOF => "UnexpectedEOF",
             UnmatchedEnd => "UnmatchedEnd",
+            UnterminatedBlock => "UnterminatedBlock",
 
             UndefinedVariable(_) => "UndefinedVariable",
+            UnexpectedPointer(_) => "UnexpectedPointer",
             NotEnoughArgs(_) => "NotEnoughArguments",
             LeftoverArgs(_) => "LeftoverArguments",
             TooLongIdent(_) => "TooLongIdentifier",
@@ -95,8 +99,10 @@ impl ErrorType {
             ExpectedExpr => s!("expected expression"),
             UnexpectedEOF => s!("unexpected end of file"),
             UnmatchedEnd => format!("unmatched control statement: {}", "end".bold()),
+            UnterminatedBlock => s!("unterminated control block"),
 
             UndefinedVariable(name) => format!("undefined variable: {}", name.bold()),
+            UnexpectedPointer(name) => format!("variable {} is pointer", name.bold()),
             NotEnoughArgs(expected) => format!("not enough arguments: this function takes {}", expected.to_string().bold()),
             LeftoverArgs(expected) => format!("leftover arguments: this function takes {}", expected.to_string().bold()),
             TooLongIdent(max) => format!("too long identifier, max length is {} characters", max.to_string().bold()),
@@ -115,6 +121,7 @@ pub fn report(rtype: ReportType, line: usize, what: ErrorType, note: Option<&str
         ReportType::Error => "error".bold().red(),
         ReportType::Warning => "warning".bold().yellow(),
     };
+    let line = line + 1;
 
     eprintln!("{rtype}: line {}:\n  {}: {}", line, what.to_string().bold(), what.describe());
 

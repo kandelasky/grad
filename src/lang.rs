@@ -164,7 +164,7 @@ fn process_floats(tokens: &[Token]) -> Result<Vec<Token>, TokenizeError> {
     Ok(result)
 }
 
-pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>>) -> Result<String, ErrorType> {
+pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Value>>) -> Result<String, ErrorType> {
     // 1. replace `true` with 1 and `false` with 0
     let mut tokens_ = {
         let mut tokens = toks.to_vec();
@@ -187,10 +187,14 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>
         let mut tokens = tokens_.clone();
         for (at, token) in tokens_.iter().enumerate() {
             if let Token::Identifier(id) = token {
-                if let Some(var) = variables.get(id) {
-                    match var.value {
-                        Value::Int32(int) => tokens[at] = Token::Integer(int),
-                        Value::Float32(int) => tokens[at] = Token::Float(int),
+                if let Some(value) = variables.get(id) {
+                    match value {
+                        Value::Int32(int, is_ptr) => if !is_ptr {
+                            tokens[at] = Token::Integer(*int)
+                        } else {
+                            return Err(ErrorType::UnexpectedPointer(id.to_string()))
+                        },
+                        Value::Float32(int) => tokens[at] = Token::Float(*int),
                         Value::Str(_) => return Err(ErrorType::StringInExpr)
                     }
                 } else {
@@ -239,7 +243,7 @@ pub fn eval(expr: &str) -> Result<Value, (ErrorType, Option<String>)> {
         Ok(value) => {
             match value {
                 evalexpr::Value::Int(int) => match i32::try_from(int) {
-                    Ok(value) => Ok(Value::Int32(value)),
+                    Ok(value) => Ok(Value::Int32(value, false)),
                     Err(_) => { Err((ErrorType::IntOverflow, Some("result of the expression caused integer overflow".to_string()))) }
                 },
                 evalexpr::Value::Float(fl) => {
@@ -251,7 +255,7 @@ pub fn eval(expr: &str) -> Result<Value, (ErrorType, Option<String>)> {
                     }
                 },
                 evalexpr::Value::Boolean(b) => {
-                    Ok(Value::Int32( if b { 1 } else { 0 } ))
+                    Ok(Value::Int32(b as i32, false))
                 }
                 evalexpr::Value::Empty => {
                     Err((ErrorType::ExpectedExpr, None))
@@ -263,7 +267,7 @@ pub fn eval(expr: &str) -> Result<Value, (ErrorType, Option<String>)> {
     }
 }
 
-pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, mem::Variable>>) -> Result<bool, (ErrorType, Option<String>)> {
+pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, mem::Value>>) -> Result<bool, (ErrorType, Option<String>)> {
     let expr = match exprify(toks, variables) {
         Ok(expr) => expr,
         Err(error) => { return Err((error, None)) }
@@ -271,7 +275,7 @@ pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, mem::Variabl
 
     match eval(&expr) {
         Ok(value) => match value {
-            mem::Value::Int32(int) => Ok(int > 0),
+            mem::Value::Int32(int, _) => Ok(int > 0),
             mem::Value::Float32(float) => Ok(float > 0.),
             mem::Value::Str(_) => panic!("a wild mem::Value::Str(_) has appeared!")
         }
@@ -304,38 +308,50 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
     case 'e': str[ w ] = 0x1B; break; // escape character
 */
 
-/* pub fn fetch_blocks(lines: &str) -> Result<HashMap<usize, Vec<String>>, (usize, shell::ErrorType)> {
-    let mut blocks: HashMap<usize, Vec<String>> = HashMap::new();
-    let mut stack: Vec<usize> = Vec::new();
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MatchEndingsError {
+    TokenizeError(usize, TokenizeError),
+    UnmatchedEnd(usize),
+    UnterminatedBlock(usize),
+}
 
-    for (at, line) in lines.lines().enumerate() {
+pub fn match_endings(lines: &Vec<&str>) -> Result<HashMap<usize, usize>, MatchEndingsError> {
+    let mut start: Vec<usize> = Vec::new();
+    let mut end: Vec<usize> = Vec::new();
+
+    for (at, line) in lines.iter().enumerate() {
         let tokens = match tokenize(line) {
-            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue },
+            Ok(tokens) => tokens,
             Err(err) => {
-                match err {
-                    TokenizeError::InvalidCharacter(ch) => { return Err((at, ErrorType::InvalidChar(ch))) },
-                    TokenizeError::IntegerOverflow => { return Err((at, ErrorType::IntOverflow)) },
-                }
+                return Err(MatchEndingsError::TokenizeError(at, err))
             }
         };
 
-        if let Some(Token::Identifier(ident)) = tokens.last() {
-            if ident != "do" {
-                continue
-            } else {
-                stack.push(at);
-                blocks.insert(at, Vec::new());
+        if let Some(Token::Identifier(ident)) = tokens.first() {
+            match ident.as_str() {
+                "if" | "while" => start.push(at),
+                "end" => end.push(at),
+                _ => {}
             }
         }
     }
 
-    Ok(blocks)
-} */
+    if start.len() > end.len() {
+        Err(MatchEndingsError::UnterminatedBlock(*start.last().unwrap()))
+    } else if end.len() > start.len() {
+        Err(MatchEndingsError::UnmatchedEnd(*end.last().unwrap()))
+    } else {
+        let mut endings: HashMap<usize, usize> = HashMap::new();
+        let iter = start.iter().zip(end.iter());
+        for (&start, &end) in iter {
+            endings.insert(start, end);
+        }
+        Ok(endings)
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::mem::Variable;
-
     use super::*;
 
     #[test]
@@ -353,8 +369,8 @@ mod tests {
     #[test]
     fn exprify_variables() {
         let mut variables = HashMap::new();
-        variables.insert(String::from("var1"), Variable::new(Value::Int32(2), false));
-        variables.insert(String::from("var2"), Variable::new(Value::Int32(3), false));
+        variables.insert(String::from("var1"), Value::Int32(2, false));
+        variables.insert(String::from("var2"), Value::Int32(3, false));
 
         let toks = [
             Token::Identifier(String::from("var1")),
@@ -377,5 +393,38 @@ mod tests {
         let expected = "1==1";
 
         assert_eq!(exprify(&toks, None).unwrap(), expected)
+    }
+
+    #[test]
+    fn exprify_ptr() {
+        // partial:
+        {
+            let mut variables = HashMap::new();
+            variables.insert(String::from("var1"), Value::Int32(2, false));
+            variables.insert(String::from("var2"), Value::Int32(3, true));
+
+            let toks = [
+                Token::Identifier(String::from("var1")),
+                Token::Add,
+                Token::Identifier(String::from("var2")),
+            ];
+
+            assert_eq!(exprify(&toks, Some(&variables)), Err(ErrorType::UnexpectedPointer(String::from("var2"))))
+        }
+
+        // both:
+        {
+            let mut variables = HashMap::new();
+            variables.insert(String::from("var1"), Value::Int32(2, true));
+            variables.insert(String::from("var2"), Value::Int32(3, true));
+
+            let toks = [
+                Token::Identifier(String::from("var1")),
+                Token::Add,
+                Token::Identifier(String::from("var2")),
+            ];
+
+            assert_eq!(exprify(&toks, Some(&variables)), Err(ErrorType::UnexpectedPointer(String::from("var1"))))
+        }
     }
 }

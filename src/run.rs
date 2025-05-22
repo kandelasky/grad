@@ -10,15 +10,15 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RunConfig {
-    exec_line_debug: bool,
-    mem_debug: bool,
+    debug_line: bool,
+    debug_mem: bool,
 }
 
 pub fn exec(source: String) {
     // this will be moved to exec() arguments in the future:
     let config: RunConfig = RunConfig {
-        exec_line_debug: false,
-        mem_debug: false,
+        debug_line: false,
+        debug_mem:  false,
     };
 
     //let source = source_.replace(";", "\n"); drop(source_);
@@ -26,21 +26,34 @@ pub fn exec(source: String) {
     let lines: Vec<&str> = source.lines().collect();
     let lines_max = lines.len();
 
-    let mut variables: HashMap<String, mem::Variable> = HashMap::new();
+    let endings = match lang::match_endings(&lines) {
+        Ok(c) => c,
+        Err(error) => {
+            match error {
+                MatchEndingsError::TokenizeError(at, error) => match error {
+                    TokenizeError::InvalidCharacter(ch) => report(Error, at, InvalidChar(ch), None),
+                    TokenizeError::IntegerOverflow => report(Error, at, IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")),
+                    TokenizeError::FloatParseError => report(Error, at, FloatOverflow, Some("this line has an overflowing floating point number (expected signed 32-bit)")),
+                },
+                MatchEndingsError::UnterminatedBlock(at) => report(Error, at, UnterminatedBlock, None),
+                MatchEndingsError::UnmatchedEnd(at) => report(Error, at, UnmatchedEnd, None),
+            }
+            return
+        }
+    };
+
+    let mut variables: HashMap<String, mem::Value> = HashMap::new();
 
     const MAX_SCOPES: usize = 256;
     let mut scopes: HashMap<usize, HashSet<String>> = HashMap::new();
     scopes.insert(0, HashSet::new());
 
-    // let mut mem_log: bool = false;
-
-    // constants:
     let constants = HashMap::from([
-        ( String::from("INT_MAX"), (mem::Value::Int32(i32::MAX), false) ),
+        ( String::from("INT_MAX"), mem::Value::Int32(i32::MAX, false) ),
     ]);
 
-    for (ident, (value, is_pointer)) in &constants {
-        variables.insert(ident.to_string(), mem::Variable::new(value.clone(), *is_pointer));
+    for (ident, value) in &constants {
+        variables.insert(ident.to_string(), value.to_owned());
     }
 
     let mut controls: Vec<(Vec<Token> /* comparator */, bool /* do? */, bool /* loop? */, usize /* origin */)> = Vec::new();
@@ -49,8 +62,8 @@ pub fn exec(source: String) {
     'l: while at < lines_max {
         let line = lines[at];
 
-        if config.exec_line_debug {
-            eprintln!("[{}]\t{}", at+1, line);
+        if config.debug_line {
+            eprintln!("[{}]\t{}", at + 1, line);
         }
 
         macro_rules! next {
@@ -62,7 +75,7 @@ pub fn exec(source: String) {
 
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at+1, $w, $n);
+                report($rt, at, $w, $n);
                 next!();
             };
         }
@@ -122,25 +135,33 @@ pub fn exec(source: String) {
                             }
                         };
 
-                        let (v, do_, is_loop) = if calling == "if" {
-                            (
-                                if mets {
-                                    vec![Token::Integer(1)]
-                                } else {
-                                    vec![Token::Integer(0)]
-                                },
-                                mets,
-                                false
-                            )
-                        } else {
-                            (toks.to_vec(), mets, true)
-                        };
+                        if mets {
+                            let (v, do_, is_loop) = if calling == "if" {
+                                (
+                                    if mets {
+                                        vec![Token::Integer(1)]
+                                    } else {
+                                        vec![Token::Integer(0)]
+                                    },
+                                    mets,
+                                    false
+                                )
+                            } else {
+                                (toks.to_vec(), mets, true)
+                            };
 
-                        if controls.len() < MAX_SCOPES {
-                            controls.push((v, do_, is_loop, origin));
-                            scopes.insert(controls.len(), HashSet::new());
+                            if controls.len() < MAX_SCOPES {
+                                controls.push((v, do_, is_loop, origin));
+                                scopes.insert(controls.len(), HashSet::new());
+                            } else {
+                                report!(Error, TooDeepControl, None);
+                            }
                         } else {
-                            report!(Error, TooDeepControl, None);
+                            let jmp = *endings.get(&at).unwrap();
+                            if config.debug_line {
+                                println!("{} {}", "jump to line".bold(), jmp+2);
+                            }
+                            at = jmp;
                         }
                     } else {
                         report!(Error, ExpectedExpr, None);
@@ -180,7 +201,7 @@ pub fn exec(source: String) {
                         let trunc_vars = scopes.get(&controls.len()).unwrap();
 
                         if !trunc_vars.is_empty() {
-                            if config.mem_debug {
+                            if config.debug_mem {
                                 let len = trunc_vars.len();
                                 println!("\n{} {} {} variable{}", "auto".bold(), "deleting".bold().red(), len, if len > 1 { 's' } else { ' ' });
                             }
@@ -202,30 +223,37 @@ pub fn exec(source: String) {
 
             "println" | "print" => {
                 let args = get_args(&tokens[1..]);
+                let mut buffer = String::new();
                 for arg in &args {
                     if arg.len() == 1 {
-                        match &arg[0] {
-                            Token::Identifier(ident) => {
-                                if let Some(var) = variables.get(ident) {
-                                    match &var.value {
-                                        mem::Value::Int32(int) => print!("{int}"),
-                                        mem::Value::Float32(fl) => print!("{fl}"),
-                                        mem::Value::Str(string) => print!("{string}"),
+                        buffer.push_str(
+                            match &arg[0] {
+                                Token::Identifier(ident) => {
+                                    if let Some(value) = variables.get(ident) {
+                                        match &value {
+                                            mem::Value::Int32(int, _) => int.to_string(),
+                                            mem::Value::Float32(fl) => fl.to_string(),
+                                            mem::Value::Str(string) => string.to_string(),
+                                        }
+                                    } else {
+                                        report!(Error, UndefinedVariable(ident.to_string()), None);
                                     }
-                                } else {
-                                    report!(Error, UndefinedVariable(ident.to_string()), None);
                                 }
-                            }
-                            Token::StringLiteral(string) => print!("{string}"),
-                            Token::Integer(int) => print!("{int}"),
-                            Token::Float(fl) => print!("{fl}"),
-                            _ => { report!(Error, InvalidExpr, None); }
-                        }
+                                Token::Integer(int) => int.to_string(),
+                                Token::Float(fl) => fl.to_string(),
+                                Token::StringLiteral(string) => string.to_string(),
+                                _ => { report!(Error, InvalidExpr, None); }
+                            }.as_str()
+                        );
+                    } else {
+                        // exprify ...
                     }
                 }
                 if calling == "println" {
-                    println!();
-                } else if args.is_empty() {
+                    println!("{buffer}");
+                } else if !args.is_empty() {
+                    print!("{buffer}");
+                } else {
                     report(Warning, at, UselessPrint, None);
                 }
             }
@@ -280,9 +308,15 @@ pub fn exec(source: String) {
                 const LINE: &str = "--------------------------------\n";
 
                 println!("\n{LINE}*ID\t\tVALUE");
-                for (ident, var) in &variables {
+                for (ident, value) in &variables {
+                    let is_ptr: bool = if let mem::Value::Int32(_, is_ptr) = value {
+                        *is_ptr
+                    } else {
+                        false
+                    };
+
                     if !constants.contains_key(ident) {
-                        println!("{}{}\t\t{:?}", if var.is_pointer { '*' } else { ' ' }, ident, var.value);
+                        println!("{}{}\t\t{:?}", if is_ptr { '*' } else { ' ' }, ident, value);
                     }
                 }
 
@@ -383,8 +417,8 @@ pub fn exec(source: String) {
                         match &toks[0] {
                             Token::Identifier(ident) => match ident.as_str() {
                                 "true" | "false" => {
-                                    let value = mem::Value::Int32( if ident == "true" { 1 } else { 0 } );
-                                    variables.insert(calling.to_string(), mem::Variable::new(value, false));
+                                    let value = mem::Value::Int32(if ident == "true" { 1 } else { 0 }, false);
+                                    variables.insert(calling.to_string(), value);
                                     next!();
                                 },
                                 _ => {}
@@ -407,7 +441,7 @@ pub fn exec(source: String) {
                                 next!();
                             }, */
                             Token::StringLiteral(string) => {
-                                variables.insert(calling.to_string(), mem::Variable::new(mem::Value::Str(string.to_string()), false));
+                                variables.insert(calling.to_string(), mem::Value::Str(string.to_string()));
                                 next!();
                             },
                             _ => { /* report!(Error, InvalidExpr, None); */ }
@@ -423,7 +457,7 @@ pub fn exec(source: String) {
                         Ok(value) => {
                             let evaluaion = match value {
                                 evalexpr::Value::Int(int) => match i32::try_from(int) {
-                                    Ok(value) => mem::Value::Int32(value),
+                                    Ok(value) => mem::Value::Int32(value, false),
                                     Err(_) => { report!(Error, IntOverflow, Some("result of the expression caused integer overflow")); }
                                 },
                                 evalexpr::Value::Float(fl) => {
@@ -443,11 +477,11 @@ pub fn exec(source: String) {
                             let v = if op == &Token::Assign {
                                 evaluaion
                             } else {
-                                let og_value = &variables.get_mut(calling).unwrap().value;
+                                let og_value = &variables.get(calling).unwrap();
     
                                 match og_value {
-                                    mem::Value::Int32(og_int) => {
-                                        if let mem::Value::Int32(ev) = evaluaion {
+                                    mem::Value::Int32(og_int, _) => {
+                                        if let mem::Value::Int32(ev, _) = evaluaion {
                                             let check = match op {
                                                 Token::Add => og_int.checked_add(ev),
                                                 Token::Substract => og_int.checked_sub(ev),
@@ -465,7 +499,7 @@ pub fn exec(source: String) {
                                                 _ => panic!()
                                             };
                                             if let Some(result) = check {
-                                                mem::Value::Int32(result)
+                                                mem::Value::Int32(result, false)
                                             } else {
                                                 report!(Error, IntOverflow, Some("when doing compound assignment"));
                                             }
@@ -493,7 +527,7 @@ pub fn exec(source: String) {
                                 }
                             };
 
-                            variables.insert(calling.to_string(), mem::Variable::new(v, false));
+                            variables.insert(calling.to_string(), v);
 
                             let defined_outer_scope: bool = {
                                 let mut result: bool = false;
