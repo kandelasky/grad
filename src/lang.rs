@@ -350,6 +350,32 @@ pub fn match_endings(lines: &Vec<&str>) -> Result<HashMap<usize, usize>, MatchEn
     }
 }
 
+pub fn find_deepest_call(toks: &[Token]) -> Option<usize> {
+    let (mut deepest, mut depth, mut max_depth, mut found) = (0_usize, 0_usize, 0_usize, false);
+    for (at, token) in toks.iter().enumerate() {
+        if at < 1 { continue; }
+
+        if let Token::Identifier(_) = toks[at-1] {
+            match *token {
+                Token::OpenParen => depth = depth.checked_add(1)?,
+                Token::CloseParen => depth = depth.checked_sub(1)?,
+                _ => {}
+            }
+            if depth > max_depth {
+                max_depth = depth;
+                deepest = at;
+                found = true;
+            }
+        }
+    }
+
+    if found {
+        Some(deepest.checked_add(1)?)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,35 +422,99 @@ mod tests {
     }
 
     #[test]
+    fn exprify_ptr_partial() {
+        let mut variables = HashMap::new();
+        variables.insert(String::from("var1"), Value::Int32(2, false));
+        variables.insert(String::from("var2"), Value::Int32(3, true));
+
+        let toks = [
+            Token::Identifier(String::from("var1")),
+            Token::Add,
+            Token::Identifier(String::from("var2")),
+        ];
+
+        assert_eq!(exprify(&toks, Some(&variables)), Err(ErrorType::UnexpectedPointer(String::from("var2"))))
+    }
+
+    #[test]
     fn exprify_ptr() {
-        // partial:
-        {
-            let mut variables = HashMap::new();
-            variables.insert(String::from("var1"), Value::Int32(2, false));
-            variables.insert(String::from("var2"), Value::Int32(3, true));
+        let mut variables = HashMap::new();
+        variables.insert(String::from("var1"), Value::Int32(2, true));
+        variables.insert(String::from("var2"), Value::Int32(3, true));
 
-            let toks = [
-                Token::Identifier(String::from("var1")),
-                Token::Add,
-                Token::Identifier(String::from("var2")),
-            ];
+        let toks = [
+            Token::Identifier(String::from("var1")),
+            Token::Add,
+            Token::Identifier(String::from("var2")),
+        ];
 
-            assert_eq!(exprify(&toks, Some(&variables)), Err(ErrorType::UnexpectedPointer(String::from("var2"))))
-        }
+        assert_eq!(exprify(&toks, Some(&variables)), Err(ErrorType::UnexpectedPointer(String::from("var1"))))
+    }
 
-        // both:
-        {
-            let mut variables = HashMap::new();
-            variables.insert(String::from("var1"), Value::Int32(2, true));
-            variables.insert(String::from("var2"), Value::Int32(3, true));
+    #[test]
+    fn find_call() {
+        let input = vec![
+            Token::Integer(1),
+            Token::Add,
+            Token::Identifier(String::from("fn_call")),
+            Token::OpenParen,
+            Token::CloseParen,
+        ];
+        let result = find_deepest_call(&input);
+        let expected: Option<usize> = Some(4);
+        assert_eq!(result, expected);
+    }
 
-            let toks = [
-                Token::Identifier(String::from("var1")),
-                Token::Add,
-                Token::Identifier(String::from("var2")),
-            ];
+    #[test]
+    fn find_call_empty() {
+        let input = vec![
+            Token::Integer(1),
+            Token::Add,
+            Token::Identifier(String::from("not_an_fn_call")),
+        ];
+        let result = find_deepest_call(&input);
+        let expected: Option<usize> = None;
+        assert_eq!(result, expected);
+    }
 
-            assert_eq!(exprify(&toks, Some(&variables)), Err(ErrorType::UnexpectedPointer(String::from("var1"))))
-        }
+    #[test]
+    fn find_call_deep() {
+        let input = vec![
+            Token::Integer(1),
+            Token::Add,
+            Token::Identifier(String::from("fn_call")),
+            Token::OpenParen,
+                Token::Identifier(String::from("deeper_fn_call")),
+                Token::OpenParen,
+                Token::CloseParen,
+            Token::CloseParen,
+        ];
+        let result = find_deepest_call(&input);
+        let expected: Option<usize> = Some(6);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn find_call_deeper_args() {
+        let input = vec![
+            Token::Integer(1),
+            Token::Add,
+            Token::Identifier(String::from("fn_call")),
+            Token::OpenParen,
+                Token::Identifier(String::from("deeper_fn_call")),
+                Token::OpenParen,
+                    Token::Identifier(String::from("more_deeper_fn_call")),
+                    Token::OpenParen,
+                        // arguments:
+                        Token::Integer(2),
+                        Token::Add,
+                        Token::Integer(2),
+                    Token::CloseParen,
+                Token::CloseParen,
+            Token::CloseParen,
+        ];
+        let result = find_deepest_call(&input);
+        let expected: Option<usize> = Some(8);
+        assert_eq!(result, expected);
     }
 }
