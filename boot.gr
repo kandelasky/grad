@@ -71,8 +71,7 @@ max = 10
 while i < max
     i + 1
 end
-i = null
-max = null
+nullean max i
 
 if true
     if true
