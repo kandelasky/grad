@@ -351,7 +351,7 @@ pub fn match_endings(lines: &Vec<&str>) -> Result<HashMap<usize, usize>, MatchEn
 }
 
 pub fn find_deepest_call(toks: &[Token]) -> Option<usize> {
-    let (mut deepest, mut depth, mut max_depth, mut found) = (0_usize, 0_usize, 0_usize, false);
+    let (mut where_deepest, mut depth, mut max_depth, mut found) = (0_usize, 0_usize, 0_usize, false);
     for (at, token) in toks.iter().enumerate() {
         if at < 1 { continue; }
 
@@ -363,14 +363,14 @@ pub fn find_deepest_call(toks: &[Token]) -> Option<usize> {
             }
             if depth > max_depth {
                 max_depth = depth;
-                deepest = at;
+                where_deepest = at;
                 found = true;
             }
         }
     }
 
     if found {
-        Some(deepest.checked_add(1)?)
+        Some(where_deepest.checked_sub(1)?)
     } else {
         None
     }
@@ -461,7 +461,7 @@ mod tests {
             Token::CloseParen,
         ];
         let result = find_deepest_call(&input);
-        let expected: Option<usize> = Some(4);
+        let expected: Option<usize> = Some(2);
         assert_eq!(result, expected);
     }
 
@@ -490,7 +490,7 @@ mod tests {
             Token::CloseParen,
         ];
         let result = find_deepest_call(&input);
-        let expected: Option<usize> = Some(6);
+        let expected: Option<usize> = Some(4);
         assert_eq!(result, expected);
     }
 
@@ -514,7 +514,7 @@ mod tests {
             Token::CloseParen,
         ];
         let result = find_deepest_call(&input);
-        let expected: Option<usize> = Some(8);
+        let expected: Option<usize> = Some(6);
         assert_eq!(result, expected);
     }
 }
