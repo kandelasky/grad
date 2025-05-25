@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{mem::{self, Value}, shell::*};
+use crate::{mem::{Value, VarMap}, shell::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenizeError {
@@ -164,7 +164,7 @@ fn process_floats(tokens: &[Token]) -> Result<Vec<Token>, TokenizeError> {
     Ok(result)
 }
 
-pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Value>>) -> Result<String, ErrorType> {
+pub fn exprify(toks: &[Token], variables: Option<&VarMap>) -> Result<String, ErrorType> {
     // 1. replace `true` with 1 and `false` with 0
     let mut tokens_ = {
         let mut tokens = toks.to_vec();
@@ -195,7 +195,8 @@ pub fn exprify(toks: &[Token], variables: Option<&HashMap<String, mem::Value>>) 
                             return Err(ErrorType::UnexpectedPointer(id.to_string()))
                         },
                         Value::Float32(int) => tokens[at] = Token::Float(*int),
-                        Value::Str(_) => return Err(ErrorType::StringInExpr)
+                        Value::Str(_) => return Err(ErrorType::StringInExpr),
+                        Value::Null => return Err(ErrorType::NullValue),
                     }
                 } else {
                     return Err(ErrorType::UndefinedVariable(id.to_string()))
@@ -267,7 +268,7 @@ pub fn eval(expr: &str) -> Result<Value, (ErrorType, Option<String>)> {
     }
 }
 
-pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, mem::Value>>) -> Result<bool, (ErrorType, Option<String>)> {
+pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, Value>>) -> Result<bool, (ErrorType, Option<String>)> {
     let expr = match exprify(toks, variables) {
         Ok(expr) => expr,
         Err(error) => { return Err((error, None)) }
@@ -275,9 +276,9 @@ pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, mem::Value>>
 
     match eval(&expr) {
         Ok(value) => match value {
-            mem::Value::Int32(int, _) => Ok(int > 0),
-            mem::Value::Float32(float) => Ok(float > 0.),
-            mem::Value::Str(_) => panic!("a wild mem::Value::Str(_) has appeared!")
+            Value::Int32(int, _) => Ok(int > 0),
+            Value::Float32(float) => Ok(float > 0.),
+            Value::Str(_) | Value::Null => panic!()
         }
         Err((error, note)) => {
             Err((error, note))
@@ -348,6 +349,47 @@ pub fn match_endings(lines: &Vec<&str>) -> Result<HashMap<usize, usize>, MatchEn
         }
         Ok(endings)
     }
+}
+
+pub fn process_fns(toks: &[Token], variables: Option<&VarMap>) -> Result<Vec<Token>, ErrorType> {
+    while let Some(fn_at) = find_deepest_call(toks) {
+        let ident = if let Token::Identifier(ident) = &toks[fn_at] { ident } else { panic!() };
+        
+        let body: Vec<Token> = {
+            let mut body = Vec::new();
+
+            if let Some(tokens) = toks.get((fn_at + 2)..) {
+                let mut paren_depth: u32 = 1;
+                for token in tokens {
+                    match *token {
+                        Token::OpenParen => paren_depth += 1,
+                        Token::CloseParen => {
+                            paren_depth -= 1;
+                            if paren_depth == 0 { break }
+                        }
+                        _ => body.push(token.clone()),
+                    }
+                }
+            }
+
+            body
+        };
+
+        let args = {
+            let args_ = get_args(&body);
+            let mut args: Vec<Value> = Vec::new();
+
+            for arg in args_ {
+                match eval(&exprify(arg, variables)?) {
+                    Ok(value) => args.push(value),
+                    Err((error, _)) => return Err(error)
+                }
+            }
+
+            args
+        };
+    }
+    Ok(toks.to_vec())
 }
 
 pub fn find_deepest_call(toks: &[Token]) -> Option<usize> {
@@ -470,7 +512,9 @@ mod tests {
         let input = vec![
             Token::Integer(1),
             Token::Add,
+            Token::OpenParen,
             Token::Identifier(String::from("not_an_fn_call")),
+            Token::CloseParen,
         ];
         let result = find_deepest_call(&input);
         let expected: Option<usize> = None;

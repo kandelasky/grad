@@ -190,6 +190,7 @@ dependencies = [
  "colored",
  "confy",
  "evalexpr",
+ "flate2",
  "macroquad",
  "rand",
  "serde",

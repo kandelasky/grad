@@ -33,6 +33,7 @@ pub enum ErrorType {
     LeftoverArgs(u16 /* expected */),
     TooLongIdent(usize /* max */),
     TooDeepControl,
+    NullValue,
 
     ConstRedefinition(String),
     UselessPrint,
@@ -65,6 +66,7 @@ impl fmt::Display for ErrorType {
             LeftoverArgs(_) => "LeftoverArguments",
             TooLongIdent(_) => "TooLongIdentifier",
             TooDeepControl => "TooDeepControl",
+            NullValue => "NullValue",
 
             ConstRedefinition(_) => "ConstRedefinition",
             UselessPrint => "UselessPrint",
@@ -107,6 +109,7 @@ impl ErrorType {
             LeftoverArgs(expected) => format!("leftover arguments: this function takes {}", expected.to_string().bold()),
             TooLongIdent(max) => format!("too long identifier, max length is {} characters", max.to_string().bold()),
             TooDeepControl => format!("too deep control block (max is {})", u8::MAX),
+            NullValue => format!("the value has type {}", "null".bold()),
 
             ConstRedefinition(name) => format!("redefintion of constant: {}", name.bold()),
             UselessPrint => format!("useless use of {} function", "print".bold()),

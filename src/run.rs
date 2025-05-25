@@ -16,7 +16,7 @@ pub struct RunConfig {
 
 pub fn exec(source: String) {
     // this will be moved to exec() arguments in the future:
-    let config: RunConfig = RunConfig {
+    let config = RunConfig {
         debug_line: false,
         debug_mem:  false,
     };
@@ -234,6 +234,7 @@ pub fn exec(source: String) {
                                             mem::Value::Int32(int, _) => int.to_string(),
                                             mem::Value::Float32(fl) => fl.to_string(),
                                             mem::Value::Str(string) => string.to_string(),
+                                            mem::Value::Null => { report!(Error, NullValue, None); },
                                         }
                                     } else {
                                         report!(Error, UndefinedVariable(ident.to_string()), None);
@@ -523,6 +524,7 @@ pub fn exec(source: String) {
                                             report!(Error, MismTypes, Some("expected type of the expression: float"));
                                         }
                                     }
+                                    mem::Value::Null => { report!(Error, NullValue, Some(format!("in variable {}", calling.bold()).as_str())); }
                                     _ => panic!()
                                 }
                             };
