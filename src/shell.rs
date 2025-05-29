@@ -34,8 +34,10 @@ pub enum ErrorType {
     TooLongIdent(usize /* max */),
     TooDeepControl,
     NullValue,
+    NestedFnDefinition,
 
-    ConstRedefinition(String),
+    ConstRedef(String),
+    FnRedef(String),
     UselessPrint,
 }
 
@@ -67,8 +69,10 @@ impl fmt::Display for ErrorType {
             TooLongIdent(_) => "TooLongIdentifier",
             TooDeepControl => "TooDeepControl",
             NullValue => "NullValue",
+            NestedFnDefinition => "NestedFnDefinition",
 
-            ConstRedefinition(_) => "ConstRedefinition",
+            ConstRedef(_) => "ConstRedefinition",
+            FnRedef(_) => "FuncRedefinition",
             UselessPrint => "UselessPrint",
         };
 
@@ -110,9 +114,11 @@ impl ErrorType {
             TooLongIdent(max) => format!("too long identifier, max length is {} characters", max.to_string().bold()),
             TooDeepControl => format!("too deep control block (max is {})", u8::MAX),
             NullValue => format!("the value has type {}", "null".bold()),
+            NestedFnDefinition => s!("function definitions cannot be nested within each other"),
 
-            ConstRedefinition(name) => format!("redefintion of constant: {}", name.bold()),
-            UselessPrint => format!("useless use of {} function", "print".bold()),
+            ConstRedef(name) => format!("redefinition of constant: {}", name.bold()),
+            FnRedef(name) => format!("redefinition of function: {}", name.bold()),
+            UselessPrint => format!("useless use of {}", "print".bold()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{mem::{Value, VarMap}, shell::*};
+use crate::{mem::{FnMap, Function, Value, VarMap}, shell::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenizeError {
@@ -296,6 +296,87 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
     result
 }
 
+pub fn get_functions(lines: &[&str]) -> Option<FnMap> {
+    let mut map: FnMap = HashMap::new();
+
+    let mut receiver: Option<String>;
+    let mut func: Function;
+    
+    macro_rules! collector_init {
+        () => {
+            receiver = None;
+            func = Default::default();
+        };
+    }
+
+    collector_init!();
+    let mut depth: u32 = 0;
+    let mut ok = true;
+
+    for (at, line) in lines.iter().enumerate() {
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, at, $w, $n);
+                if $rt == ReportType::Error {
+                    ok = false;
+                }
+                continue;
+            };
+        }
+        
+        let tokens = match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
+                    TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
+                }
+            }
+        };
+
+        if let Some(ref name) = receiver {
+            if let Token::Identifier(ident) = &tokens[0] {
+                match ident.as_str() {
+                    "if" | "while" /* | "repeat" */ => depth += 1,
+                    "end" => {
+                        depth -= 1;
+                        if depth == 0 {
+                            map.insert(name.to_string(), func);
+                            collector_init!();
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            func.body.push(line.to_string());
+        } else if tokens[0] == Token::Identifier(String::from("fn")) {
+            if let Some(Token::Identifier(ident)) = tokens.get(1) {
+                if !map.contains_key(ident) {
+                    if let Some(tokens) = tokens.get(2..) {
+                        for token in tokens {
+                            if let Token::Identifier(arg) = token {
+                                func.args.insert(arg.to_string());
+                            } else {
+                                report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+                            }
+                        }
+                    }
+                    receiver = Some(ident.to_string());
+                    depth = 1;
+                } else {
+                    report!(ReportType::Error, ErrorType::FnRedef(ident.to_string()), None);
+                }
+            } else {
+                report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+            }
+        }
+    }
+    
+    if ok { Some(map) } else { None }
+}
+
 /*
     escape sequences:
 
@@ -351,7 +432,7 @@ pub fn match_endings(lines: &Vec<&str>) -> Result<HashMap<usize, usize>, MatchEn
     }
 }
 
-pub fn process_fns(toks: &[Token], variables: Option<&VarMap>) -> Result<Vec<Token>, ErrorType> {
+/* pub fn process_fns(toks: &[Token], variables: Option<&VarMap>) -> Result<Vec<Token>, ErrorType> {
     while let Some(fn_at) = find_deepest_call(toks) {
         let ident = if let Token::Identifier(ident) = &toks[fn_at] { ident } else { panic!() };
         
@@ -390,7 +471,7 @@ pub fn process_fns(toks: &[Token], variables: Option<&VarMap>) -> Result<Vec<Tok
         };
     }
     Ok(toks.to_vec())
-}
+} */
 
 pub fn find_deepest_call(toks: &[Token]) -> Option<usize> {
     let (mut where_deepest, mut depth, mut max_depth, mut found) = (0_usize, 0_usize, 0_usize, false);
@@ -560,5 +641,72 @@ mod tests {
         let result = find_deepest_call(&input);
         let expected: Option<usize> = Some(6);
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn get_functions() {
+        let code = [
+            // empty:
+            "fn func_1",
+            "end",
+
+            // with body:
+            "fn func_2",
+            "    foo",
+            "end",
+
+            // with args:
+            "fn func_3 ment argu",
+            "    foo",
+            "end",
+
+            // with controls inside:
+            "fn func_4 ment argu",
+            "    if true",
+            "        while false",
+            "            foo",
+            "        end",
+            "    end",
+            "end",
+        ];
+
+        let expected_names = vec![
+            String::from("func_1"),
+            String::from("func_2"),
+            String::from("func_3"),
+            String::from("func_4"),
+        ];
+
+        let mut names = super::get_functions(&code).unwrap().into_keys().collect::<Vec<String>>();
+        names.sort();
+        
+        assert_eq!(expected_names, names);
+        //println!("{:#?}", super::get_functions(&code));
+    }
+
+    #[test]
+    fn get_functions_bad() {
+        let code = [
+            // note: tokenization errors are not covered here
+
+            // no identifier:
+            "fn",      // 1
+            "end",
+
+            // invalid fn's identifier:
+            "fn 123",  // 3
+            "end",
+
+            // weird fn's arguments:
+            "fn bad_args Rust++",  // 5
+            "end",
+
+            // redefinition:
+            "fn func",
+            "end",
+            "fn func", // 9
+            "end",
+        ];
+        assert_eq!(super::get_functions(&code), None);
     }
 }

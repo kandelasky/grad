@@ -2,9 +2,7 @@ use std::collections::{HashMap, HashSet};
 use colored::Colorize;
 
 use crate::{
-    lang::{self, *},
-    mem,
-    shell::{ErrorType::*, ReportType::*, *},
+    consts, lang::{self, *}, mem, shell::{ErrorType::*, ReportType::*, *}
     // random
 };
 
@@ -42,9 +40,8 @@ pub fn exec(source: String) {
         }
     };
 
-    let mut variables: HashMap<String, mem::Value> = HashMap::new();
+    let mut variables: mem::VarMap = HashMap::new();
 
-    const MAX_SCOPES: usize = 256;
     let mut scopes: HashMap<usize, HashSet<String>> = HashMap::new();
     scopes.insert(0, HashSet::new());
 
@@ -150,7 +147,7 @@ pub fn exec(source: String) {
                                 (toks.to_vec(), mets, true)
                             };
 
-                            if controls.len() < MAX_SCOPES {
+                            if controls.len() < consts::MAX_SCOPES {
                                 controls.push((v, do_, is_loop, origin));
                                 scopes.insert(controls.len(), HashSet::new());
                             } else {
@@ -370,9 +367,8 @@ pub fn exec(source: String) {
             // ================================================================
 
             _ => {
-                const MAX_IDENT_LENGTH: usize = 32;
-                if calling.len() > 32 {
-                    report!(Error, TooLongIdent(MAX_IDENT_LENGTH), None);
+                if calling.len() > consts::MAX_IDENT_LENGTH {
+                    report!(Error, TooLongIdent(consts::MAX_IDENT_LENGTH), None);
                 }
 
                 let var_exist = variables.contains_key(calling);
@@ -381,7 +377,7 @@ pub fn exec(source: String) {
                     // call fn
                 } else {
                     if constants.contains_key(calling) {
-                        report(Warning, at, ConstRedefinition(calling.to_string()), None);
+                        report(Warning, at, ConstRedef(calling.to_string()), None);
                     }
 
                     let op = if let Some(tok) = tokens.get(1) {

@@ -70,7 +70,7 @@ fn window_config() -> mq::Conf {
     };
 
     mq::Conf {
-        window_title: format!("Grad v{}", consts::VERSION_STR),
+        window_title: format!("Grad v{}", env!("CARGO_PKG_VERSION")),
         window_width: conf.width as i32,
         window_height: conf.height as i32,
         window_resizable: conf.is_resizable,
