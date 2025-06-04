@@ -21,10 +21,18 @@ pub fn exec(source: String) {
 
     //let source = source_.replace(";", "\n"); drop(source_);
 
-    let lines: Vec<&str> = source.lines().collect();
-    let lines_max = lines.len();
+    let (lines_max, lines, functions) = {
+        let src: Vec<&str> = source.lines().collect();
+        if let Some(class) = Class::make(&src) {
+            println!("{:#?}", class.fns);
+            (class.src.len(), class.src, class.fns)
+        } else {
+            return
+        }
+    };
+    let mut fn_calls: Vec<mem::FnCall> = Vec::new();
 
-    let endings = match lang::match_endings(&lines) {
+    /* let endings = match lang::match_endings(&lines) {
         Ok(c) => c,
         Err(error) => {
             match error {
@@ -38,7 +46,7 @@ pub fn exec(source: String) {
             }
             return
         }
-    };
+    }; */
 
     let mut variables: mem::VarMap = HashMap::new();
 
@@ -57,7 +65,11 @@ pub fn exec(source: String) {
     
     let mut at: usize = 0;
     'l: while at < lines_max {
-        let line = lines[at];
+        let line = if let Some(call) = fn_calls.last() {
+            &call.function.body[call.at]
+        } else {
+            &lines[at]
+        };
 
         if config.debug_line {
             eprintln!("[{}]\t{}", at + 1, line);
@@ -65,7 +77,11 @@ pub fn exec(source: String) {
 
         macro_rules! next {
             () => {
-                at += 1;
+                if let Some(last) = fn_calls.last_mut() {
+                    last.at += 1;
+                } else {
+                    at += 1;
+                };
                 continue 'l;
             };
         }
@@ -132,33 +148,25 @@ pub fn exec(source: String) {
                             }
                         };
 
-                        if mets {
-                            let (v, do_, is_loop) = if calling == "if" {
-                                (
-                                    if mets {
-                                        vec![Token::Integer(1)]
-                                    } else {
-                                        vec![Token::Integer(0)]
-                                    },
-                                    mets,
-                                    false
-                                )
-                            } else {
-                                (toks.to_vec(), mets, true)
-                            };
-
-                            if controls.len() < consts::MAX_SCOPES {
-                                controls.push((v, do_, is_loop, origin));
-                                scopes.insert(controls.len(), HashSet::new());
-                            } else {
-                                report!(Error, TooDeepControl, None);
-                            }
+                        let (v, do_, is_loop) = if calling == "if" {
+                            (
+                                if mets {
+                                    vec![Token::Integer(1)]
+                                } else {
+                                    vec![Token::Integer(0)]
+                                },
+                                mets,
+                                false
+                            )
                         } else {
-                            let jmp = *endings.get(&at).unwrap();
-                            if config.debug_line {
-                                println!("{} {}", "jump to line".bold(), jmp+2);
-                            }
-                            at = jmp;
+                            (toks.to_vec(), mets, true)
+                        };
+
+                        if controls.len() < consts::MAX_SCOPES {
+                            controls.push((v, do_, is_loop, origin));
+                            scopes.insert(controls.len(), HashSet::new());
+                        } else {
+                            report!(Error, TooDeepControl, None);
                         }
                     } else {
                         report!(Error, ExpectedExpr, None);
@@ -174,7 +182,7 @@ pub fn exec(source: String) {
 
             "end" => {
                 if let Some((condition, do_, is_loop, start)) = controls.last() {
-                    let pop;
+                    let pop: bool;
 
                     if *is_loop && *do_ {
                         let mets = match lang::slice_cmp(condition, Some(&variables)) {
@@ -213,6 +221,12 @@ pub fn exec(source: String) {
                     }
                 } else {
                     report!(Error, UnmatchedEnd, None);
+                }
+            }
+
+            "ret" => {
+                if fn_calls.pop().is_none() {
+                    report!(Error, UnmatchedRet, None);
                 }
             }
 
@@ -289,7 +303,7 @@ pub fn exec(source: String) {
                 }
             }
 
-            "assert_exists" => {
+            "assert_exists" | "assert_x" => {
                 if let Some(token) = tokens.get(1) {
                     if let Token::Identifier(ident) = token {
                         if !variables.contains_key(ident) {
@@ -372,9 +386,10 @@ pub fn exec(source: String) {
                 }
 
                 let var_exist = variables.contains_key(calling);
+                let func = functions.get(calling);
 
-                if false /* fn_exist */ {
-                    // call fn
+                if let Some(func) = func {
+                    fn_calls.push(mem::FnCall::from_fn(func));
                 } else {
                     if constants.contains_key(calling) {
                         report(Warning, at, ConstRedef(calling.to_string()), None);

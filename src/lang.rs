@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{mem::{FnMap, Function, Value, VarMap}, shell::*};
+use crate::{consts, mem::{FnMap, Function, Value, VarMap}, shell::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenizeError {
@@ -296,85 +296,96 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
     result
 }
 
-pub fn get_functions(lines: &[&str]) -> Option<FnMap> {
-    let mut map: FnMap = HashMap::new();
+#[derive(Clone, Debug, PartialEq)]
+pub struct Class {
+    pub src: Vec<String>,
+    pub fns: FnMap,
+}
 
-    let mut receiver: Option<String>;
-    let mut func: Function;
-    
-    macro_rules! collector_init {
-        () => {
-            receiver = None;
-            func = Default::default();
-        };
-    }
+impl Class {
+    pub fn make(lines: &[&str]) -> Option<Class> {
+        let mut fns: FnMap = HashMap::new();
+        let mut src: Vec<String> = Vec::new();
 
-    collector_init!();
-    let mut depth: u32 = 0;
-    let mut ok = true;
-
-    for (at, line) in lines.iter().enumerate() {
-        macro_rules! report {
-            ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at, $w, $n);
-                if $rt == ReportType::Error {
-                    ok = false;
-                }
-                continue;
+        let mut receiver: Option<String>;
+        let mut func: Function;
+        
+        macro_rules! collector_init {
+            () => {
+                receiver = None;
+                func = Default::default();
             };
         }
-        
-        let tokens = match tokenize(line) {
-            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
-            Err(err) => {
-                match err {
-                    TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
-                    TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
-                    TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
-                }
-            }
-        };
 
-        if let Some(ref name) = receiver {
-            if let Token::Identifier(ident) = &tokens[0] {
-                match ident.as_str() {
-                    "if" | "while" /* | "repeat" */ => depth += 1,
-                    "end" => {
-                        depth -= 1;
-                        if depth == 0 {
-                            map.insert(name.to_string(), func);
-                            collector_init!();
-                            continue;
-                        }
+        collector_init!();
+        let mut ok = true;
+
+        for (at, line) in lines.iter().enumerate() {
+            macro_rules! report {
+                ($rt:expr, $w:expr, $n:expr) => {
+                    report($rt, at, $w, $n);
+                    if $rt == ReportType::Error {
+                        ok = false;
                     }
-                    _ => {}
-                }
+                    continue;
+                };
             }
-            func.body.push(line.to_string());
-        } else if tokens[0] == Token::Identifier(String::from("fn")) {
-            if let Some(Token::Identifier(ident)) = tokens.get(1) {
-                if !map.contains_key(ident) {
-                    if let Some(tokens) = tokens.get(2..) {
-                        for token in tokens {
-                            if let Token::Identifier(arg) = token {
-                                func.args.insert(arg.to_string());
-                            } else {
-                                report!(ReportType::Error, ErrorType::ExpectedIdent, None);
-                            }
-                        }
+            
+            let tokens = match tokenize(line) {
+                Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+                Err(err) => {
+                    match err {
+                        TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
+                        TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                        TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
                     }
-                    receiver = Some(ident.to_string());
-                    depth = 1;
+                }
+            };
+
+            if let Some(ref name) = receiver {
+                if let Token::Identifier(ident) = &tokens[0] {
+                    if ident == "ret" {
+                        fns.insert(name.to_string(), func);
+                        collector_init!();
+                        continue;
+                    }
+                }
+                func.body.push(line.to_string());
+            } else if tokens[0] == Token::Identifier(String::from("fn")) {
+                if let Some(Token::Identifier(ident)) = tokens.get(1) {
+                    if !fns.contains_key(ident) {
+                        if ident.len() <= consts::MAX_IDENT_LENGTH {
+                            func.at = at+1;
+                            if let Some(tokens) = tokens.get(2..) {
+                                for token in tokens {
+                                    if let Token::Identifier(arg) = token {
+                                        func.args.insert(arg.to_string());
+                                    } else {
+                                        report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+                                    }
+                                }
+                            }
+                            receiver = Some(ident.to_string());
+                        } else {
+                            report!(ReportType::Error, ErrorType::TooLongIdent(consts::MAX_IDENT_LENGTH), None);
+                        }
+                    } else {
+                        report!(ReportType::Error, ErrorType::FnRedef(ident.to_string()), None);
+                    }
                 } else {
-                    report!(ReportType::Error, ErrorType::FnRedef(ident.to_string()), None);
+                    report!(ReportType::Error, ErrorType::ExpectedIdent, None);
                 }
             } else {
-                report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+                src.push(line.to_string());
             }
         }
+        
+        if ok {
+            Some(Class { src, fns })
+        } else {
+            None
+        }
     }
-    
-    if ok { Some(map) } else { None }
 }
 
 /*
@@ -397,7 +408,7 @@ pub enum MatchEndingsError {
     UnterminatedBlock(usize),
 }
 
-pub fn match_endings(lines: &Vec<&str>) -> Result<HashMap<usize, usize>, MatchEndingsError> {
+pub fn match_endings(lines: &[String]) -> Result<HashMap<usize, usize>, MatchEndingsError> {
     let mut start: Vec<usize> = Vec::new();
     let mut end: Vec<usize> = Vec::new();
 
@@ -648,17 +659,17 @@ mod tests {
         let code = [
             // empty:
             "fn func_1",
-            "end",
+            "ret",
 
             // with body:
             "fn func_2",
             "    foo",
-            "end",
+            "ret",
 
             // with args:
             "fn func_3 ment argu",
             "    foo",
-            "end",
+            "ret",
 
             // with controls inside:
             "fn func_4 ment argu",
@@ -667,7 +678,7 @@ mod tests {
             "            foo",
             "        end",
             "    end",
-            "end",
+            "ret",
         ];
 
         let expected_names = vec![
@@ -677,7 +688,10 @@ mod tests {
             String::from("func_4"),
         ];
 
-        let mut names = super::get_functions(&code).unwrap().into_keys().collect::<Vec<String>>();
+        let fns = Class::make(&code).unwrap().fns;
+        println!("{:#?}", fns);
+
+        let mut names = fns.into_keys().collect::<Vec<String>>();
         names.sort();
         
         assert_eq!(expected_names, names);
@@ -691,22 +705,22 @@ mod tests {
 
             // no identifier:
             "fn",      // 1
-            "end",
+            "ret",
 
             // invalid fn's identifier:
             "fn 123",  // 3
-            "end",
+            "ret",
 
             // weird fn's arguments:
             "fn bad_args Rust++",  // 5
-            "end",
+            "ret",
 
             // redefinition:
             "fn func",
-            "end",
+            "ret",
             "fn func", // 9
-            "end",
+            "ret",
         ];
-        assert_eq!(super::get_functions(&code), None);
+        assert_eq!(Class::make(&code), None);
     }
 }

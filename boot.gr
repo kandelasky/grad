@@ -1,7 +1,15 @@
 # =============================================================
+# Functions
+
+fn my_func
+    println "`my_func` said: Hello!"
+ret
+
+my_func
+
+# =============================================================
 # Output
 
-println "Welcome to Grad!"
 println "Various numbers can be passed to print: ", 42, "; ", 3.14
 
 # =============================================================
@@ -54,11 +62,11 @@ nullean var_1 var_2 var
 if 1 == 1
     if 1
         if true
-            msg = "`if` says: hello!"
+            msg = "`if` said: hello!"
             println msg
 
             if false
-                evil_msg = "evil `if` says: ghghrhghhrhhh!!!"
+                evil_msg = "evil `if` said: ghghrhghhrhhh!!!"
                 println evil_msg
             end
         end

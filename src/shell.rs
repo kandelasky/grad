@@ -39,6 +39,7 @@ pub enum ErrorType {
     ConstRedef(String),
     FnRedef(String),
     UselessPrint,
+    UnmatchedRet,
 }
 
 impl fmt::Display for ErrorType {
@@ -60,6 +61,7 @@ impl fmt::Display for ErrorType {
             ExpectedExpr => "ExpectedExpression",
             UnexpectedEOF => "UnexpectedEOF",
             UnmatchedEnd => "UnmatchedEnd",
+            UnmatchedRet => "UnmatchedRet",
             UnterminatedBlock => "UnterminatedBlock",
 
             UndefinedVariable(_) => "UndefinedVariable",
@@ -105,6 +107,7 @@ impl ErrorType {
             ExpectedExpr => s!("expected expression"),
             UnexpectedEOF => s!("unexpected end of file"),
             UnmatchedEnd => format!("unmatched control statement: {}", "end".bold()),
+            UnmatchedRet => format!("unmatched {}", "ret".bold()),
             UnterminatedBlock => s!("unterminated control block"),
 
             UndefinedVariable(name) => format!("undefined variable: {}", name.bold()),
@@ -132,10 +135,10 @@ pub fn report(rtype: ReportType, line: usize, what: ErrorType, note: Option<&str
     };
     let line = line + 1;
 
-    eprintln!("{rtype}: line {}:\n  {}: {}", line, what.to_string().bold(), what.describe());
+    eprintln!("{rtype}: line {line}:\n  {}: {}", what.to_string().bold(), what.describe());
 
     if let Some(text) = note {
-        eprintln!("{}: {}", "note".bold().cyan(), text);
+        eprintln!("{}: {text}", "note".bold().cyan());
     }
 
     eprintln!();

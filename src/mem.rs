@@ -12,20 +12,34 @@ pub type VarMap = HashMap<String, Value>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
+    pub at: usize,
     pub args: HashSet<String>,
     pub body: Vec<String>
 }
 
 impl Function {
-    pub fn new(args: HashSet<String>, body: Vec<String>) -> Self {
-        Self { args, body }
+    pub fn new(at: usize, args: HashSet<String>, body: Vec<String>) -> Self {
+        Self { at, args, body }
     }
 }
 
 impl Default for Function {
     fn default() -> Self {
-        Self::new(HashSet::new(), Vec::new())
+        Self::new(0, HashSet::new(), Vec::new())
     }
 }
 
 pub type FnMap = HashMap<String, Function>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FnCall<'a> {
+    pub function: &'a Function,
+    pub at: usize,
+    pub depth: u32
+}
+
+impl<'a> FnCall<'a> {
+    pub fn from_fn(function: &'a Function) -> Self {
+        Self { function, at: 0, depth: 0 }
+    }
+}
