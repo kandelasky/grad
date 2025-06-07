@@ -32,7 +32,7 @@ pub enum ErrorType {
     NotEnoughArgs(u16 /* expected */),
     LeftoverArgs(u16 /* expected */),
     TooLongIdent(usize /* max */),
-    TooDeepControl,
+    TooDeepControl(usize /* max */),
     NullValue,
     NestedFnDefinition,
 
@@ -69,7 +69,7 @@ impl fmt::Display for ErrorType {
             NotEnoughArgs(_) => "NotEnoughArguments",
             LeftoverArgs(_) => "LeftoverArguments",
             TooLongIdent(_) => "TooLongIdentifier",
-            TooDeepControl => "TooDeepControl",
+            TooDeepControl(_) => "TooDeepControl",
             NullValue => "NullValue",
             NestedFnDefinition => "NestedFnDefinition",
 
@@ -114,8 +114,8 @@ impl ErrorType {
             UnexpectedPointer(name) => format!("variable {} is pointer", name.bold()),
             NotEnoughArgs(expected) => format!("not enough arguments: this function takes {}", expected.to_string().bold()),
             LeftoverArgs(expected) => format!("leftover arguments: this function takes {}", expected.to_string().bold()),
-            TooLongIdent(max) => format!("too long identifier, max length is {} characters", max.to_string().bold()),
-            TooDeepControl => format!("too deep control block (max is {})", u8::MAX),
+            TooLongIdent(max) => format!("too long identifier (max length is {} characters)", max.to_string().bold()),
+            TooDeepControl(max) => format!("too deep control block (max depth is {})", max.to_string().bold()),
             NullValue => format!("the value has type {}", "null".bold()),
             NestedFnDefinition => s!("function definitions cannot be nested within each other"),
 

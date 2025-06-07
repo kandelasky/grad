@@ -2,8 +2,8 @@
 # Functions
 
 fn my_func
-    println "`my_func` said: Hello!"
-ret
+    println "called: my_func"
+end
 
 my_func
 
@@ -59,18 +59,11 @@ nullean var_1 var_2 var
 # =============================================================
 # Control flow
 
-if 1 == 1
-    if 1
-        if true
-            msg = "`if` said: hello!"
-            println msg
-
-            if false
-                evil_msg = "evil `if` said: ghghrhghhrhhh!!!"
-                println evil_msg
-            end
-        end
-    end
+if 1 == 2
+    println "oops, mathematics broke.."
+end
+if 2 > 1
+    println "ok!"
 end
 
 # simple repeat pattern:
@@ -94,5 +87,4 @@ end
 # =============================================================
 # Special functions
 
-# prints all existing variables at the moment:
-# dbg_vars
+# nothing here yet!

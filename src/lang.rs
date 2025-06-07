@@ -35,6 +35,8 @@ pub enum Token {
     DoubleQuote, // "
     OpenParen, // (
     CloseParen, // )
+    OpenCurly, // {
+    CloseCurly, // }
     CommentLine, // #
     ExclamationMark, // !
     At, // @
@@ -73,6 +75,8 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
             ',' => { tokens.push(Token::Comma); next!(); }
             '(' => { tokens.push(Token::OpenParen); next!(); }
             ')' => { tokens.push(Token::CloseParen); next!(); }
+            '{' => { tokens.push(Token::OpenCurly); next!(); }
+            '}' => { tokens.push(Token::CloseCurly); next!(); }
             '#' => { break; }
             '!' => { tokens.push(Token::ExclamationMark); next!(); }
             '@' => { tokens.push(Token::At); next!(); }
@@ -309,6 +313,8 @@ impl Class {
 
         let mut receiver: Option<String>;
         let mut func: Function;
+
+        let mut depth: usize = 0;
         
         macro_rules! collector_init {
             () => {
@@ -344,10 +350,23 @@ impl Class {
 
             if let Some(ref name) = receiver {
                 if let Token::Identifier(ident) = &tokens[0] {
-                    if ident == "ret" {
-                        fns.insert(name.to_string(), func);
-                        collector_init!();
-                        continue;
+                    match ident.as_str() {
+                        "if" | "while" => {
+                            if depth < consts::MAX_SCOPES {
+                                depth += 1;
+                            } else {
+                                report!(ReportType::Error, ErrorType::TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
+                            }
+                        }
+                        "end" => {
+                            depth -= 1;
+                            if depth == 0 {
+                                fns.insert(name.to_string(), func);
+                                collector_init!();
+                                continue;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 func.body.push(line.to_string());
@@ -366,6 +385,7 @@ impl Class {
                                 }
                             }
                             receiver = Some(ident.to_string());
+                            depth = 1;
                         } else {
                             report!(ReportType::Error, ErrorType::TooLongIdent(consts::MAX_IDENT_LENGTH), None);
                         }

@@ -10,6 +10,12 @@ pub enum Value {
 
 pub type VarMap = HashMap<String, Value>;
 
+pub fn fill(variables: &mut VarMap, map: &VarMap) {
+    for (ident, value) in map {
+        variables.insert(ident.to_string(), value.clone());
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub at: usize,

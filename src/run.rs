@@ -12,25 +12,48 @@ pub struct RunConfig {
     debug_mem: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct Routine<'a> {
+    pub body: &'a Vec<String>,
+    pub at: usize,
+    pub env: Vec<String>,
+}
+
+impl<'a> Routine<'a> {
+    pub fn new(body: &'a Vec<String>) -> Self {
+        Self {
+            body,
+            at: 0,
+            env: Vec::new(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RoutineOp<'a> {
+    Add(&'a Vec<String>),
+    Pop,
+}
+
 pub fn exec(source: String) {
-    // this will be moved to exec() arguments in the future:
     let config = RunConfig {
         debug_line: false,
         debug_mem:  false,
     };
 
-    //let source = source_.replace(";", "\n"); drop(source_);
-
-    let (lines_max, lines, functions) = {
+    let (source, functions) = {
         let src: Vec<&str> = source.lines().collect();
         if let Some(class) = Class::make(&src) {
-            println!("{:#?}", class.fns);
-            (class.src.len(), class.src, class.fns)
+            // println!("{:#?}", class.fns);
+            (class.src, class.fns)
         } else {
             return
         }
     };
     let mut fn_calls: Vec<mem::FnCall> = Vec::new();
+
+    let mut routs: Vec<Routine> = vec![Routine::new(&source)];
+    let mut routs_op: Option<RoutineOp<'_>> = None;
 
     /* let endings = match lang::match_endings(&lines) {
         Ok(c) => c,
@@ -49,26 +72,39 @@ pub fn exec(source: String) {
     }; */
 
     let mut variables: mem::VarMap = HashMap::new();
-
-    let mut scopes: HashMap<usize, HashSet<String>> = HashMap::new();
-    scopes.insert(0, HashSet::new());
-
+    
     let constants = HashMap::from([
         ( String::from("INT_MAX"), mem::Value::Int32(i32::MAX, false) ),
     ]);
-
+    
     for (ident, value) in &constants {
         variables.insert(ident.to_string(), value.to_owned());
     }
 
+    let constants: Vec<String> = constants.into_keys().collect();
+
     let mut controls: Vec<(Vec<Token> /* comparator */, bool /* do? */, bool /* loop? */, usize /* origin */)> = Vec::new();
+
+    let mut scopes: HashMap<usize, HashSet<String>> = HashMap::new();
+    scopes.insert(0, HashSet::new());
     
-    let mut at: usize = 0;
-    'l: while at < lines_max {
-        let line = if let Some(call) = fn_calls.last() {
-            &call.function.body[call.at]
+    while let Some(route) = routs.last_mut() {
+        if let Some(op) = routs_op {
+            match op {
+                RoutineOp::Add(body) => routs.push(Routine::new(body)),
+                RoutineOp::Pop => { routs.pop(); }
+            }
+            routs_op = None;
+            continue;
+        }
+
+        let (lines, at, env) = (route.body, route.at, &mut route.env);
+
+        let line = if let Some(line) = lines.get(at) {
+            line
         } else {
-            &lines[at]
+            routs_op = Some(RoutineOp::Pop);
+            continue;
         };
 
         if config.debug_line {
@@ -77,12 +113,8 @@ pub fn exec(source: String) {
 
         macro_rules! next {
             () => {
-                if let Some(last) = fn_calls.last_mut() {
-                    last.at += 1;
-                } else {
-                    at += 1;
-                };
-                continue 'l;
+                route.at += 1;
+                continue;
             };
         }
 
@@ -139,7 +171,7 @@ pub fn exec(source: String) {
 
             "if" | "while" => {
                 let origin = at + 1;
-                if origin < lines_max {
+                if origin < route.body.len() {
                     if let Some(toks) = tokens.get(1..) {
                         let mets = match lang::slice_cmp(toks, Some(&variables)) {
                             Ok(b) => b,
@@ -166,7 +198,7 @@ pub fn exec(source: String) {
                             controls.push((v, do_, is_loop, origin));
                             scopes.insert(controls.len(), HashSet::new());
                         } else {
-                            report!(Error, TooDeepControl, None);
+                            report!(Error, TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
                         }
                     } else {
                         report!(Error, ExpectedExpr, None);
@@ -193,8 +225,8 @@ pub fn exec(source: String) {
                         };
 
                         if mets {
-                            at = *start;
-                            continue 'l;
+                            route.at = *start;
+                            continue;
                         } else {
                             pop = true;
                         }
@@ -299,7 +331,7 @@ pub fn exec(source: String) {
 
                 if left_eval != right_eval {
                     eprintln!("\nline {}: {} {}\n  left: {:?}\n  right: {:?}", at+1, "assertion".bold(), "failed".bold().red(), left_eval, right_eval);
-                    break 'l
+                    break;
                 }
             }
 
@@ -327,7 +359,7 @@ pub fn exec(source: String) {
                         false
                     };
 
-                    if !constants.contains_key(ident) {
+                    if !constants.contains(ident) {
                         println!("{}{}\t\t{:?}", if is_ptr { '*' } else { ' ' }, ident, value);
                     }
                 }
@@ -389,9 +421,10 @@ pub fn exec(source: String) {
                 let func = functions.get(calling);
 
                 if let Some(func) = func {
-                    fn_calls.push(mem::FnCall::from_fn(func));
+                    //routs.push(Routine { body: &func.body, at: 0 });
+                    routs_op = Some(RoutineOp::Add(&func.body));
                 } else {
-                    if constants.contains_key(calling) {
+                    if constants.contains(calling) {
                         report(Warning, at, ConstRedef(calling.to_string()), None);
                     }
 
@@ -556,8 +589,8 @@ pub fn exec(source: String) {
                             };
 
                             if !defined_outer_scope {
-                                let vect = scopes.get_mut(&controls.len()).unwrap();
-                                vect.insert(calling.to_string());
+                                let set = scopes.get_mut(&controls.len()).unwrap();
+                                set.insert(calling.to_string());
                             }
                         }
                         Err(_) => { report!(Error, InvalidExpr, Some("when evaluating the expression")); }
@@ -565,7 +598,6 @@ pub fn exec(source: String) {
                 }
             }
         }
-
-        next!();
+        route.at += 1;
     }
 }

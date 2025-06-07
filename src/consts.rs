@@ -13,6 +13,7 @@ consts! {
 usize:
     MAX_SCOPES = 256
     MAX_IDENT_LENGTH = 256
+    MAX_CONTROL_DEPTH = 256
 }
 
 // "GRADCODE"
