@@ -16,7 +16,7 @@ pub struct RunConfig {
 pub struct Routine<'a> {
     pub body: &'a Vec<String>,
     pub at: usize,
-    pub env: Vec<String>,
+
 }
 
 impl<'a> Routine<'a> {
@@ -24,7 +24,6 @@ impl<'a> Routine<'a> {
         Self {
             body,
             at: 0,
-            env: Vec::new(),
         }
     }
 }
@@ -50,7 +49,6 @@ pub fn exec(source: String) {
             return
         }
     };
-    let mut fn_calls: Vec<mem::FnCall> = Vec::new();
 
     let mut routs: Vec<Routine> = vec![Routine::new(&source)];
     let mut routs_op: Option<RoutineOp<'_>> = None;
@@ -85,20 +83,49 @@ pub fn exec(source: String) {
 
     let mut controls: Vec<(Vec<Token> /* comparator */, bool /* do? */, bool /* loop? */, usize /* origin */)> = Vec::new();
 
-    let mut scopes: HashMap<usize, HashSet<String>> = HashMap::new();
-    scopes.insert(0, HashSet::new());
+    let mut scopes: Vec<HashSet<String>> = vec![HashSet::new()];
     
     while let Some(route) = routs.last_mut() {
+        macro_rules! scope_cleanup {
+            () => {
+                let cleanup = scopes.get(controls.len()).unwrap();
+
+                if !cleanup.is_empty() {
+                    if config.debug_mem {
+                        let len = cleanup.len();
+                        println!("scope_cleanup: {} {} {} variable{}", "auto".bold(), "deleting".bold().red(), len, if len > 1 { 's' } else { ' ' });
+                    }
+
+                    for id in cleanup {
+                        variables.remove(id);
+                    }
+                }
+            };
+        }
+
+        macro_rules! scope_new {
+            () => {
+                scopes.push(HashSet::new());
+            };
+        }
+
         if let Some(op) = routs_op {
             match op {
-                RoutineOp::Add(body) => routs.push(Routine::new(body)),
-                RoutineOp::Pop => { routs.pop(); }
+                RoutineOp::Add(body) => {
+                    routs.push(Routine::new(body));
+                    scope_new!();
+                }
+                RoutineOp::Pop => {
+                    scope_cleanup!();
+                    scopes.pop();
+                    routs.pop();
+                }
             }
             routs_op = None;
             continue;
         }
 
-        let (lines, at, env) = (route.body, route.at, &mut route.env);
+        let (lines, at) = (route.body, route.at);
 
         let line = if let Some(line) = lines.get(at) {
             line
@@ -196,7 +223,7 @@ pub fn exec(source: String) {
 
                         if controls.len() < consts::MAX_SCOPES {
                             controls.push((v, do_, is_loop, origin));
-                            scopes.insert(controls.len(), HashSet::new());
+                            scope_new!();
                         } else {
                             report!(Error, TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
                         }
@@ -209,7 +236,6 @@ pub fn exec(source: String) {
             }
 
             /* "repeat" => {
-                let var = if let Some(Token::Identifier(ident)) = tokens.get(1) {};
             } */
 
             "end" => {
@@ -235,7 +261,7 @@ pub fn exec(source: String) {
                     }
 
                     if pop {
-                        let trunc_vars = scopes.get(&controls.len()).unwrap();
+                        let trunc_vars = scopes.get(controls.len()).unwrap();
 
                         if !trunc_vars.is_empty() {
                             if config.debug_mem {
@@ -248,7 +274,7 @@ pub fn exec(source: String) {
                             }
                         }
 
-                        scopes.remove(&controls.len());
+                        scopes.pop();
                         controls.pop();
                     }
                 } else {
@@ -256,42 +282,59 @@ pub fn exec(source: String) {
                 }
             }
 
-            "ret" => {
-                if fn_calls.pop().is_none() {
-                    report!(Error, UnmatchedRet, None);
-                }
-            }
+            /* "ret" => {
+            } */
 
             // == Built-in fns ================================================
 
             "println" | "print" => {
                 let args = get_args(&tokens[1..]);
+
                 let mut buffer = String::new();
-                for arg in &args {
-                    if arg.len() == 1 {
-                        buffer.push_str(
-                            match &arg[0] {
-                                Token::Identifier(ident) => {
-                                    if let Some(value) = variables.get(ident) {
-                                        match &value {
-                                            mem::Value::Int32(int, _) => int.to_string(),
-                                            mem::Value::Float32(fl) => fl.to_string(),
-                                            mem::Value::Str(string) => string.to_string(),
-                                            mem::Value::Null => { report!(Error, NullValue, None); },
-                                        }
-                                    } else {
-                                        report!(Error, UndefinedVariable(ident.to_string()), None);
+                for fmt in &args {
+                    let string = if fmt.len() == 1 {
+                        match &fmt[0] {
+                            Token::Identifier(ident) => {
+                                if let Some(value) = variables.get(ident) {
+                                    match &value {
+                                        mem::Value::Int32(int, _) => int.to_string(),
+                                        mem::Value::Float32(fl) => fl.to_string(),
+                                        mem::Value::Str(string) => string.to_string(),
+                                        mem::Value::Null => { report!(Error, NullValue, None); },
                                     }
+                                } else {
+                                    report!(Error, UndefinedVariable(ident.to_string()), None);
                                 }
-                                Token::Integer(int) => int.to_string(),
-                                Token::Float(fl) => fl.to_string(),
-                                Token::StringLiteral(string) => string.to_string(),
-                                _ => { report!(Error, InvalidExpr, None); }
-                            }.as_str()
-                        );
+                            }
+                            Token::Integer(int) => int.to_string(),
+                            Token::Float(fl) => fl.to_string(),
+                            Token::StringLiteral(string) => string.to_string(),
+                            _ => { report!(Error, InvalidExpr, None); }
+                        }
                     } else {
-                        // exprify ...
-                    }
+                        let expr = match exprify(args[0], Some(&variables)) {
+                            Ok(expr) => expr,
+                            Err(error) => { report!(Error, error, Some("when parsing the expression")); }
+                        };
+
+                        let value = match lang::eval(&expr) {
+                            Ok(value) => value,
+                            Err((error, note)) => { report!(Error, error, note.as_deref()); }
+                        };
+
+                        match value {
+                            mem::Value::Int32(int, is_ptr) => if !is_ptr {
+                                int.to_string()
+                            } else {
+                                panic!("unexpected pointer");
+                            }
+                            mem::Value::Float32(float) => float.to_string(),
+                            mem::Value::Str(string) => string,
+                            mem::Value::Null => panic!("unexpected Null"),
+                        }
+                    };
+
+                    buffer.push_str(string.as_str());
                 }
                 if calling == "println" {
                     println!("{buffer}");
@@ -335,7 +378,7 @@ pub fn exec(source: String) {
                 }
             }
 
-            "assert_exists" | "assert_x" => {
+            "assert_exists" | "assert_ex" => {
                 if let Some(token) = tokens.get(1) {
                     if let Token::Identifier(ident) = token {
                         if !variables.contains_key(ident) {
@@ -373,9 +416,9 @@ pub fn exec(source: String) {
                         if let Token::Identifier(ident) = token {
                             // <- TODO: if this is pointer - remove container
 
-                            let vect = scopes.get_mut(&controls.len()).unwrap();
+                            let vec = scopes.get_mut(controls.len()).unwrap();
 
-                            if !vect.remove(ident) || variables.remove(ident).is_none() {
+                            if !vec.remove(ident) || variables.remove(ident).is_none() {
                                 report!(Error, UndefinedVariable(ident.to_string()), None);
                             }
                         } else {
@@ -384,31 +427,6 @@ pub fn exec(source: String) {
                     }
                 }
             }
-
-            /* "mem_log" => {
-                let args = get_args!(1);
-
-                mem_log = match lang::slice_cmp(args[0], Some(&variables)) {
-                    Ok(b) => b,
-                    Err((error, note)) => {
-                        report!(Error, error, note.as_deref());
-                    }
-                };
-            } */
-            /* "mem_cleanup" => {
-                let mut cleanup = Vec::new();
-                for ident in variables.keys() {
-                    cleanup.push(ident.to_string());
-                }
-
-                let len = cleanup.len();
-                if mem_log && len > 0 {
-                    println!("[mem_cleanup] {} {} variable{}", "deleting".red().bold(), len, if len > 1 { "s" } else { "" });
-                }
-                for item in cleanup {
-                    variables.remove(&item);
-                }
-            } */
 
             // ================================================================
 
@@ -421,8 +439,8 @@ pub fn exec(source: String) {
                 let func = functions.get(calling);
 
                 if let Some(func) = func {
-                    //routs.push(Routine { body: &func.body, at: 0 });
                     routs_op = Some(RoutineOp::Add(&func.body));
+                    scope_new!();
                 } else {
                     if constants.contains(calling) {
                         report(Warning, at, ConstRedef(calling.to_string()), None);
@@ -471,8 +489,8 @@ pub fn exec(source: String) {
                             Token::Null => {
                                 // <- TODO: if this is pointer - remove container
 
-                                let vect = scopes.get_mut(&controls.len()).unwrap();
-                                vect.remove(calling);
+                                let vec = scopes.get_mut(controls.len()).unwrap();
+                                vec.remove(calling);
 
                                 variables.remove(calling);
                                 next!();
@@ -578,7 +596,7 @@ pub fn exec(source: String) {
                             let defined_outer_scope: bool = {
                                 let mut result: bool = false;
                                 'g: for dive in 0..controls.len() {
-                                    for ident in scopes.get(&dive).unwrap() {
+                                    for ident in scopes.get(dive).unwrap() {
                                         if ident == calling {
                                             result = true;
                                             break 'g;
@@ -589,15 +607,16 @@ pub fn exec(source: String) {
                             };
 
                             if !defined_outer_scope {
-                                let set = scopes.get_mut(&controls.len()).unwrap();
+                                let set = scopes.get_mut(controls.len()).unwrap();
                                 set.insert(calling.to_string());
                             }
                         }
                         Err(_) => { report!(Error, InvalidExpr, Some("when evaluating the expression")); }
                     }
                 }
-            }
-        }
+            } // _
+        } // match calling.as_str()
+
         route.at += 1;
     }
 }
