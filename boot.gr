@@ -27,7 +27,7 @@ var = 42         # and integer
 
 # compound assignment operators are supported as well (+=, -=, *=, etc)
 # please note that they are look differently unlike other languages:
-var = 0      # assignment (init)
+var = 0      # assignment
 var + 4      # add
 var - 2      # substract
 var * 8      # multiply

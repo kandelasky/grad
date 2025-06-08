@@ -2,6 +2,8 @@ use std::fmt;
 
 use colored::Colorize;
 
+use crate::mem;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ReportType {
     Error,
@@ -13,8 +15,9 @@ pub enum ErrorType {
     IntOverflow,
     FloatOverflow,
     StringInExpr,
-    MismTypes,
+    MismTypes(mem::ValueType /* expected */),
     FloatExp,
+    NullValue,
 
     InvalidChar(char),
     InvalidOp,
@@ -33,7 +36,7 @@ pub enum ErrorType {
     LeftoverArgs(u16 /* expected */),
     TooLongIdent(usize /* max */),
     TooDeepControl(usize /* max */),
-    NullValue,
+    TooDeepCall(usize /* max */),
     NestedFnDefinition,
 
     ConstRedef(String),
@@ -49,7 +52,7 @@ impl fmt::Display for ErrorType {
             IntOverflow => "IntegerOverflow",
             FloatOverflow => "FloatOverflow",
             StringInExpr => "StringInExpr",
-            MismTypes => "MismatchedTypes",
+            MismTypes(_) => "MismatchedTypes",
             FloatExp => "FloatExponentiation",
 
             InvalidChar(_) => "InvalidChar",
@@ -70,6 +73,7 @@ impl fmt::Display for ErrorType {
             LeftoverArgs(_) => "LeftoverArguments",
             TooLongIdent(_) => "TooLongIdentifier",
             TooDeepControl(_) => "TooDeepControl",
+            TooDeepCall(_) => "TooDeepCall",
             NullValue => "NullValue",
             NestedFnDefinition => "NestedFnDefinition",
 
@@ -95,7 +99,10 @@ impl ErrorType {
             IntOverflow => s!("integer overflow"),
             FloatOverflow => s!("float overflow"),
             StringInExpr => s!("strings cannot appear in expressions"),
-            MismTypes => s!("mismatched types"),
+            MismTypes(expected) => format!(
+                "mismatched types: expected {}",
+                expected.to_string().bold(),
+            ),
             FloatExp => s!("float exponentiation"),
 
             InvalidChar(ch) => format!("invalid character: {ch}"),
@@ -116,6 +123,7 @@ impl ErrorType {
             LeftoverArgs(expected) => format!("leftover arguments: this function takes {}", expected.to_string().bold()),
             TooLongIdent(max) => format!("too long identifier (max length is {} characters)", max.to_string().bold()),
             TooDeepControl(max) => format!("too deep control block (max depth is {})", max.to_string().bold()),
+            TooDeepCall(max) => format!("too deep function call (max depth is {})", max.to_string().bold()),
             NullValue => format!("the value has type {}", "null".bold()),
             NestedFnDefinition => s!("function definitions cannot be nested within each other"),
 

@@ -272,6 +272,15 @@ pub fn eval(expr: &str) -> Result<Value, (ErrorType, Option<String>)> {
     }
 }
 
+pub fn compute(toks: &[Token], variables: Option<&VarMap>) -> Result<Value, (ErrorType, Option<String>)> {
+    let expr = match exprify(toks, variables) {
+        Ok(expr) => expr,
+        Err(error) => return Err((error, Some(String::from("when parsing the expression"))))
+    };
+
+    eval(&expr)
+}
+
 pub fn slice_cmp(toks: &[Token], variables: Option<&HashMap<String, Value>>) -> Result<bool, (ErrorType, Option<String>)> {
     let expr = match exprify(toks, variables) {
         Ok(expr) => expr,
@@ -300,6 +309,148 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
     result
 }
 
+fn clean_src(source: &[&str]) -> Option<Vec<String>> {
+    let mut src: Vec<String> = Vec::new();
+    let mut fn_def: usize = 0;
+    let mut ok = true;
+
+    for (at, line) in source.iter().enumerate() {
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, at, $w, $n);
+                if $rt == ReportType::Error {
+                    ok = false;
+                }
+                continue;
+            };
+        }
+        
+        match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() {
+                if let Token::Identifier(ident) = &tokens[0] {
+                    match ident.as_str() {
+                        "fn" => fn_def += 1,
+                        "if" | "while" => if fn_def > 0 { fn_def += 1 },
+                        "end" => if fn_def > 0 { fn_def = fn_def.saturating_sub(1); continue; },
+                        _ => {}
+                    }
+                }
+                
+                if fn_def == 0 {
+                    src.push(line.to_string());
+                }
+            } else {
+                continue;
+            }
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
+                    TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
+                }
+            }
+        };
+    }
+
+    if ok { Some(src) } else { None }
+}
+
+fn get_functions(source: &[&str]) -> Option<FnMap> {
+    let mut fns: FnMap = HashMap::new();
+    let mut receiver: Option<String>;
+    let mut func: Function;
+
+    let mut depth: usize = 0;
+    
+    macro_rules! collector_init {
+        () => {
+            receiver = None;
+            func = Default::default();
+        };
+    }
+
+    collector_init!();
+    let mut ok = true;
+
+    for (at, line) in source.iter().enumerate() {
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, at, $w, $n);
+                if $rt == ReportType::Error {
+                    ok = false;
+                }
+                continue;
+            };
+        }
+        
+        let tokens = match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
+                    TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
+                }
+            }
+        };
+
+        if let Some(ref name) = receiver {
+            if let Token::Identifier(ident) = &tokens[0] {
+                match ident.as_str() {
+                    "if" | "while" => {
+                        if depth < consts::MAX_SCOPES {
+                            depth += 1;
+                        } else {
+                            report!(ReportType::Error, ErrorType::TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
+                        }
+                    }
+                    "end" => {
+                        depth -= 1;
+                        if depth == 0 {
+                            fns.insert(name.to_string(), func);
+                            collector_init!();
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            func.body.push(line.to_string());
+        } else if tokens[0] == Token::Identifier(String::from("fn")) {
+            if let Some(Token::Identifier(ident)) = tokens.get(1) {
+                if !fns.contains_key(ident) {
+                    if ident.len() <= consts::MAX_IDENT_LENGTH {
+                        func.at = at+1;
+                        /* if let Some(tokens) = tokens.get(2..) {
+                            for token in tokens {
+                                if let Token::Identifier(arg) = token {
+                                    func.args.insert(arg.to_string());
+                                } else {
+                                    report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+                                }
+                            }
+                        } */
+                        receiver = Some(ident.to_string());
+                        depth = 1;
+                    } else {
+                        report!(ReportType::Error, ErrorType::TooLongIdent(consts::MAX_IDENT_LENGTH), None);
+                    }
+                } else {
+                    report!(ReportType::Error, ErrorType::FnRedef(ident.to_string()), None);
+                }
+            } else {
+                report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+            }
+        }
+    }
+    
+    if ok {
+        Some(fns)
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Class {
     pub src: Vec<String>,
@@ -308,103 +459,13 @@ pub struct Class {
 
 impl Class {
     pub fn make(lines: &[&str]) -> Option<Class> {
-        let mut fns: FnMap = HashMap::new();
-        let mut src: Vec<String> = Vec::new();
+        let funcs = get_functions(lines)?;
+        let source = clean_src(lines)?;
 
-        let mut receiver: Option<String>;
-        let mut func: Function;
-
-        let mut depth: usize = 0;
-        
-        macro_rules! collector_init {
-            () => {
-                receiver = None;
-                func = Default::default();
-            };
-        }
-
-        collector_init!();
-        let mut ok = true;
-
-        for (at, line) in lines.iter().enumerate() {
-            macro_rules! report {
-                ($rt:expr, $w:expr, $n:expr) => {
-                    report($rt, at, $w, $n);
-                    if $rt == ReportType::Error {
-                        ok = false;
-                    }
-                    continue;
-                };
-            }
-            
-            let tokens = match tokenize(line) {
-                Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
-                Err(err) => {
-                    match err {
-                        TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
-                        TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
-                        TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
-                    }
-                }
-            };
-
-            if let Some(ref name) = receiver {
-                if let Token::Identifier(ident) = &tokens[0] {
-                    match ident.as_str() {
-                        "if" | "while" => {
-                            if depth < consts::MAX_SCOPES {
-                                depth += 1;
-                            } else {
-                                report!(ReportType::Error, ErrorType::TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
-                            }
-                        }
-                        "end" => {
-                            depth -= 1;
-                            if depth == 0 {
-                                fns.insert(name.to_string(), func);
-                                collector_init!();
-                                continue;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                func.body.push(line.to_string());
-            } else if tokens[0] == Token::Identifier(String::from("fn")) {
-                if let Some(Token::Identifier(ident)) = tokens.get(1) {
-                    if !fns.contains_key(ident) {
-                        if ident.len() <= consts::MAX_IDENT_LENGTH {
-                            func.at = at+1;
-                            if let Some(tokens) = tokens.get(2..) {
-                                for token in tokens {
-                                    if let Token::Identifier(arg) = token {
-                                        func.args.insert(arg.to_string());
-                                    } else {
-                                        report!(ReportType::Error, ErrorType::ExpectedIdent, None);
-                                    }
-                                }
-                            }
-                            receiver = Some(ident.to_string());
-                            depth = 1;
-                        } else {
-                            report!(ReportType::Error, ErrorType::TooLongIdent(consts::MAX_IDENT_LENGTH), None);
-                        }
-                    } else {
-                        report!(ReportType::Error, ErrorType::FnRedef(ident.to_string()), None);
-                    }
-                } else {
-                    report!(ReportType::Error, ErrorType::ExpectedIdent, None);
-                }
-            } else {
-                src.push(line.to_string());
-            }
-        }
-        
-        if ok {
-            Some(Class { src, fns })
-        } else {
-            None
-        }
+        Some(Class {
+            src: source,
+            fns: funcs,
+        })
     }
 }
 

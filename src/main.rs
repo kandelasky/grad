@@ -1,44 +1,47 @@
 use std::path::Path;
 
 use grad::*;
-use macroquad::prelude as mq;
 use serde_derive::*;
 use colored::Colorize;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+fn main() -> Result<(), Error> {
+    //eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+
+    let path = Path::new("boot.gr");
+    
+    let bytes = if let Ok(bytes) = std::fs::read(path) {
+        bytes
+    } else {
+        return Err(Error::FileReadFailed)
+    };
+
+    if bytes[0..8] == consts::MAGIC {
+        // run_bytecode(SLICE);
+    } else if let Ok(source) = String::from_utf8(bytes) {
+        run::exec(source);
+    } else {
+        return Err(Error::InvalidUtf8)
+    }
+    
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Error {
     FileReadFailed,
     // CompilationFailed,
     InvalidUtf8
 }
 
-//#[macroquad::main(window_config)]
-/* async */ fn main() -> Result<(), Error> {
-    //eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
-    let path = Path::new("boot.gr");
-
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            eprintln!("{}: failed to read file:\n  {}: {}", "fatal error".bold().red(), format!("{:?}", err.kind()).bold(), err.kind());
-            return Err(Error::FileReadFailed)
-        }
-    };
-
-    let is_bytecode = bytes[0..8] == consts::MAGIC;
-    if is_bytecode {
-        // run_bytecode(SLICE);
-    } else if let Ok(source) = String::from_utf8(bytes) {
-        run::exec(source);
-    } else {
-        eprintln!("{}: failed to read file:\n  {}", "fatal error".bold().red(), "this file contains invalid UTF-8 data".bold());
-        return Err(Error::InvalidUtf8)
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Error::FileReadFailed => "unable to read file",
+            Error::InvalidUtf8 => "invalid UTF-8 data",
+        };
+        write!(f, "{}: {str}", "error".bold().red())
     }
-
-    //std::thread::sleep(std::time::Duration::from_secs(5));
-
-    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,25 +60,5 @@ impl Default for GradConfig {
             is_fullscreen: false,
             is_resizable: true,
         }
-    }
-}
-
-#[allow(dead_code)]
-fn window_config() -> mq::Conf {
-    let conf = if let Ok(conf) = confy::load::<GradConfig>("grad", None) {
-        conf
-    } else {
-        eprintln!("grad: unable to load config file, using default");
-        Default::default()
-    };
-
-    mq::Conf {
-        window_title: format!("Grad v{}", env!("CARGO_PKG_VERSION")),
-        window_width: conf.width as i32,
-        window_height: conf.height as i32,
-        window_resizable: conf.is_resizable,
-        fullscreen: conf.is_fullscreen,
-        // TODO: icon
-        ..Default::default()
     }
 }

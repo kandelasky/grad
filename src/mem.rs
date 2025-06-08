@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Value {
@@ -19,19 +19,18 @@ pub fn fill(variables: &mut VarMap, map: &VarMap) {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub at: usize,
-    pub args: HashSet<String>,
     pub body: Vec<String>
 }
 
 impl Function {
-    pub fn new(at: usize, args: HashSet<String>, body: Vec<String>) -> Self {
-        Self { at, args, body }
+    pub fn new(at: usize, body: Vec<String>) -> Self {
+        Self { at, body }
     }
 }
 
 impl Default for Function {
     fn default() -> Self {
-        Self::new(0, HashSet::new(), Vec::new())
+        Self::new(0, Vec::new())
     }
 }
 
@@ -47,5 +46,27 @@ pub struct FnCall<'a> {
 impl<'a> FnCall<'a> {
     pub fn from_fn(function: &'a Function) -> Self {
         Self { function, at: 0, depth: 0 }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ValueType {
+    Int32,
+    Float32,
+    Str,
+    Null,
+}
+
+impl std::fmt::Display for ValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
+        let string = match self {
+            ValueType::Int32 => "integer",
+            ValueType::Float32 => "float",
+            ValueType::Str => "string",
+            ValueType::Null => "null",
+        };
+
+        write!(f, "{}", string)
     }
 }

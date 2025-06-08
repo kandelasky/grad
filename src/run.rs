@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 use colored::Colorize;
 
 use crate::{
-    consts, lang::{self, *}, mem, shell::{ErrorType::*, ReportType::*, *}
-    // random
+    consts, lang::{self, *}, mem::{self, ValueType}, shell::{ErrorType::*, ReportType::*, *}, time::sleep
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -43,7 +42,7 @@ pub fn exec(source: String) {
     let (source, functions) = {
         let src: Vec<&str> = source.lines().collect();
         if let Some(class) = Class::make(&src) {
-            // println!("{:#?}", class.fns);
+            // println!("{:#?}", class);
             (class.src, class.fns)
         } else {
             return
@@ -51,9 +50,10 @@ pub fn exec(source: String) {
     };
 
     let mut routs: Vec<Routine> = vec![Routine::new(&source)];
+    let mut routs_len: usize = 1;
     let mut routs_op: Option<RoutineOp<'_>> = None;
 
-    /* let endings = match lang::match_endings(&lines) {
+    let endings = match lang::match_endings(&source) {
         Ok(c) => c,
         Err(error) => {
             match error {
@@ -67,7 +67,7 @@ pub fn exec(source: String) {
             }
             return
         }
-    }; */
+    };
 
     let mut variables: mem::VarMap = HashMap::new();
     
@@ -119,6 +119,7 @@ pub fn exec(source: String) {
                     scope_cleanup!();
                     scopes.pop();
                     routs.pop();
+                    routs_len -= 1;
                 }
             }
             routs_op = None;
@@ -207,25 +208,33 @@ pub fn exec(source: String) {
                             }
                         };
 
-                        let (v, do_, is_loop) = if calling == "if" {
-                            (
-                                if mets {
-                                    vec![Token::Integer(1)]
-                                } else {
-                                    vec![Token::Integer(0)]
-                                },
-                                mets,
-                                false
-                            )
-                        } else {
-                            (toks.to_vec(), mets, true)
-                        };
+                        if mets {
+                            let (v, do_, is_loop) = if calling == "if" {
+                                (
+                                    if mets {
+                                        vec![Token::Integer(1)]
+                                    } else {
+                                        vec![Token::Integer(0)]
+                                    },
+                                    mets,
+                                    false
+                                )
+                            } else {
+                                (toks.to_vec(), mets, true)
+                            };
 
-                        if controls.len() < consts::MAX_SCOPES {
-                            controls.push((v, do_, is_loop, origin));
-                            scope_new!();
+                            if controls.len() < consts::MAX_SCOPES {
+                                controls.push((v, do_, is_loop, origin));
+                                scope_new!();
+                            } else {
+                                report!(Error, TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
+                            }
                         } else {
-                            report!(Error, TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
+                            let jmp = *endings.get(&at).unwrap();
+                            if config.debug_line {
+                                println!("{} {}", "jump to line".bold(), jmp+2);
+                            }
+                            route.at = jmp;
                         }
                     } else {
                         report!(Error, ExpectedExpr, None);
@@ -312,12 +321,7 @@ pub fn exec(source: String) {
                             _ => { report!(Error, InvalidExpr, None); }
                         }
                     } else {
-                        let expr = match exprify(args[0], Some(&variables)) {
-                            Ok(expr) => expr,
-                            Err(error) => { report!(Error, error, Some("when parsing the expression")); }
-                        };
-
-                        let value = match lang::eval(&expr) {
+                        let value = match lang::compute(fmt, Some(&variables)) {
                             Ok(value) => value,
                             Err((error, note)) => { report!(Error, error, note.as_deref()); }
                         };
@@ -336,6 +340,7 @@ pub fn exec(source: String) {
 
                     buffer.push_str(string.as_str());
                 }
+
                 if calling == "println" {
                     println!("{buffer}");
                 } else if !args.is_empty() {
@@ -343,6 +348,37 @@ pub fn exec(source: String) {
                 } else {
                     report(Warning, at, UselessPrint, None);
                 }
+            }
+
+            "sleep" => {
+                let args = get_args!(1);
+                let expr = args[0];
+
+                let time = if expr.len() == 1 {
+                    match &expr[0] {
+                        Token::Integer(int) => *int,
+                        Token::Float(float) => *float as i32,
+                        _ => { report!(Error, MismTypes(ValueType::Int32), None); }
+                    }
+                } else {
+                    let value = match lang::compute(expr, Some(&variables)) {
+                        Ok(value) => value,
+                        Err((error, note)) => { report!(Error, error, note.as_deref()); }
+                    };
+
+                    match value {
+                            mem::Value::Int32(int, is_ptr) => if !is_ptr {
+                                int
+                            } else {
+                                panic!("unexpected pointer");
+                            }
+                            mem::Value::Float32(float) => float as i32,
+                            mem::Value::Str(_) => { report!(Error, MismTypes(ValueType::Int32), None); }
+                            mem::Value::Null => panic!("unexpected Null"),
+                        }
+                };
+
+                sleep(time);
             }
 
             "assert_eq" => {
@@ -439,8 +475,13 @@ pub fn exec(source: String) {
                 let func = functions.get(calling);
 
                 if let Some(func) = func {
-                    routs_op = Some(RoutineOp::Add(&func.body));
-                    scope_new!();
+                    if routs_len <= consts::MAX_CALL_DEPTH {
+                        routs_op = Some(RoutineOp::Add(&func.body));
+                        routs_len += 1;
+                        scope_new!();
+                    } else {
+                        report!(Error, TooDeepCall(consts::MAX_CALL_DEPTH), None);
+                    }
                 } else {
                     if constants.contains(calling) {
                         report(Warning, at, ConstRedef(calling.to_string()), None);
@@ -567,7 +608,7 @@ pub fn exec(source: String) {
                                                 report!(Error, IntOverflow, Some("when doing compound assignment"));
                                             }
                                         } else {
-                                            report!(Error, MismTypes, Some("expected type of the expression: integer"));
+                                            report!(Error, MismTypes(ValueType::Int32), None);
                                         }
                                     }
                                     mem::Value::Float32(og_float) => {
@@ -583,7 +624,7 @@ pub fn exec(source: String) {
                                             };
                                             mem::Value::Float32(result)
                                         } else {
-                                            report!(Error, MismTypes, Some("expected type of the expression: float"));
+                                            report!(Error, MismTypes(ValueType::Float32), None);
                                         }
                                     }
                                     mem::Value::Null => { report!(Error, NullValue, Some(format!("in variable {}", calling.bold()).as_str())); }
@@ -617,6 +658,6 @@ pub fn exec(source: String) {
             } // _
         } // match calling.as_str()
 
-        route.at += 1;
+        next!();
     }
 }
