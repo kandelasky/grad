@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod consts;
 pub mod mem;
 pub mod lang;

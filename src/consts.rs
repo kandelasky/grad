@@ -4,11 +4,6 @@ macro_rules! consts {
     };
 }
 
-/* consts! {
-&str:
-    VERSION_STR = "0.1.0"
-} */
-
 consts! {
 usize:
     MAX_SCOPES = 256

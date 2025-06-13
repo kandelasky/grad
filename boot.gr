@@ -25,7 +25,7 @@ var = 42         # and integer
 # floats and integers are always signed 32-bit numbers,
 # strings are UTF-8 encoded.
 
-# compound assignment operators are supported as well (+=, -=, *=, etc)
+# compound assignment operators are supported as well!  
 # please note that they are look differently unlike other languages:
 var = 0      # assignment
 var + 4      # add
@@ -60,9 +60,8 @@ nullean var_1 var_2 var
 # Control flow
 
 if 1 == 2
-    println "oops, mathematics broke.."
-end
-if 2 > 1
+    println "whoops, mathematics broke.."
+else
     println "ok!"
 end
 

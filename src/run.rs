@@ -39,11 +39,11 @@ pub fn exec(source: String) {
         debug_mem:  false,
     };
 
-    let (source, functions) = {
+    let (source, functions, endings) = {
         let src: Vec<&str> = source.lines().collect();
         if let Some(class) = Class::make(&src) {
-            // println!("{:#?}", class);
-            (class.src, class.fns)
+            drop(source);
+            (class.src, class.fns, class.ends)
         } else {
             return
         }
@@ -52,22 +52,6 @@ pub fn exec(source: String) {
     let mut routs: Vec<Routine> = vec![Routine::new(&source)];
     let mut routs_len: usize = 1;
     let mut routs_op: Option<RoutineOp<'_>> = None;
-
-    let endings = match lang::match_endings(&source) {
-        Ok(c) => c,
-        Err(error) => {
-            match error {
-                MatchEndingsError::TokenizeError(at, error) => match error {
-                    TokenizeError::InvalidCharacter(ch) => report(Error, at, InvalidChar(ch), None),
-                    TokenizeError::IntegerOverflow => report(Error, at, IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")),
-                    TokenizeError::FloatParseError => report(Error, at, FloatOverflow, Some("this line has an overflowing floating point number (expected signed 32-bit)")),
-                },
-                MatchEndingsError::UnterminatedBlock(at) => report(Error, at, UnterminatedBlock, None),
-                MatchEndingsError::UnmatchedEnd(at) => report(Error, at, UnmatchedEnd, None),
-            }
-            return
-        }
-    };
 
     let mut variables: mem::VarMap = HashMap::new();
     
@@ -148,7 +132,7 @@ pub fn exec(source: String) {
 
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at, $w, $n);
+                report($rt, (at, line), $w, $n);
                 next!();
             };
         }
@@ -230,10 +214,7 @@ pub fn exec(source: String) {
                                 report!(Error, TooDeepControl(consts::MAX_CONTROL_DEPTH), None);
                             }
                         } else {
-                            let jmp = *endings.get(&at).unwrap();
-                            if config.debug_line {
-                                println!("{} {}", "jump to line".bold(), jmp+2);
-                            }
+                            let jmp = *endings.get(&at).unwrap_or_else(|| panic!("unable to find endpoint for the control block at line {at}"));
                             route.at = jmp;
                         }
                     } else {
@@ -243,6 +224,18 @@ pub fn exec(source: String) {
                     report!(Error, UnexpectedEOF, None);
                 }
             }
+
+            /* "else" => {
+                if let Some((_, do_, is_loop, _)) = controls.last_mut() {
+                    if !*is_loop {
+                        *do_ = !*do_;
+                    } else {
+                        report!(Error, ElseForLoop, None);
+                    }
+                } else {
+                    report!(Error, UnmatchedElse, None);
+                }
+            } */
 
             /* "repeat" => {
             } */
@@ -346,7 +339,7 @@ pub fn exec(source: String) {
                 } else if !args.is_empty() {
                     print!("{buffer}");
                 } else {
-                    report(Warning, at, UselessPrint, None);
+                    report(Warning, (at, line), UselessPrint, None);
                 }
             }
 
@@ -484,7 +477,7 @@ pub fn exec(source: String) {
                     }
                 } else {
                     if constants.contains(calling) {
-                        report(Warning, at, ConstRedef(calling.to_string()), None);
+                        report(Warning, (at, line), ConstRedef(calling.to_string()), None);
                     }
 
                     let op = if let Some(tok) = tokens.get(1) {
@@ -622,7 +615,11 @@ pub fn exec(source: String) {
                                                 Token::Exponent => { report!(Error, FloatExp, Some("when doing compound assignment")); },
                                                 _ => panic!()
                                             };
-                                            mem::Value::Float32(result)
+                                            if result.is_finite() {
+                                                mem::Value::Float32(result)
+                                            } else {
+                                                report!(Error, FloatOverflow, Some("when doing compound assignment"));
+                                            }
                                         } else {
                                             report!(Error, MismTypes(ValueType::Float32), None);
                                         }

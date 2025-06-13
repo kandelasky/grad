@@ -235,6 +235,7 @@ pub fn exprify(toks: &[Token], variables: Option<&VarMap>) -> Result<String, Err
             Token::Comma => ",",
             Token::OpenParen => "(",
             Token::CloseParen => ")",
+            Token::ExclamationMark => "!",
             _ => return Err(ErrorType::InvalidExpr)
         };
         result.push_str(pusheen);
@@ -317,7 +318,7 @@ fn clean_src(source: &[&str]) -> Option<Vec<String>> {
     for (at, line) in source.iter().enumerate() {
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at, $w, $n);
+                report($rt, (at, line), $w, $n);
                 if $rt == ReportType::Error {
                     ok = false;
                 }
@@ -349,7 +350,78 @@ fn clean_src(source: &[&str]) -> Option<Vec<String>> {
                     TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
                 }
             }
+        }
+    }
+
+    if ok { Some(src) } else { None }
+}
+
+fn else_unwrapper(source: Vec<String>) -> Option<Vec<String>> {
+    let mut src: Vec<String> = Vec::new();
+    let mut ctls: Vec<(bool, &str)> = Vec::new();
+    let mut ok = true;
+
+    for (at, line) in source.iter().enumerate() {
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, (at, line), $w, $n);
+                if $rt == ReportType::Error {
+                    ok = false;
+                }
+                continue;
+            };
+        }
+
+        let tokens = match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(char) => { report!(ReportType::Error, ErrorType::InvalidChar(char), None); },
+                    TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
+                }
+            }
         };
+
+        let fword = if let Token::Identifier(ident) = &tokens[0] {
+            ident
+        } else {
+            continue;
+        };
+
+        match fword.as_str() {
+            "if" => {
+                if line.chars().nth(3).is_some() {
+                    ctls.push((true, line));
+                } else {
+                    report(ReportType::Error, (at, line), ErrorType::ExpectedExpr, None);
+                    break;
+                }
+            },
+            "while" => ctls.push((false, line)),
+            "else" => {
+                let (else_allowed, line) = if let Some(boo) = ctls.pop() {
+                    (boo.0, boo.1)
+                } else {
+                    report!(ReportType::Error, ErrorType::UnmatchedElse, None);
+                };
+
+                if else_allowed {
+                    src.push(String::from("end"));
+
+                    let char = line.chars().nth(2).expect("`if` without an expression should be filtered");
+                    let startpoint = if char == ' ' { 3.. } else { 2.. };
+                    src.push(format!("if!({})", &line[startpoint]));
+
+                    continue;
+                } else {
+                    report!(ReportType::Error, ErrorType::ElseForLoop, None);
+                }
+            }
+            _ => {}
+        }
+        
+        src.push(line.to_string());
     }
 
     if ok { Some(src) } else { None }
@@ -368,14 +440,14 @@ fn get_functions(source: &[&str]) -> Option<FnMap> {
             func = Default::default();
         };
     }
-
     collector_init!();
+
     let mut ok = true;
 
     for (at, line) in source.iter().enumerate() {
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
-                report($rt, at, $w, $n);
+                report($rt, (at, line), $w, $n);
                 if $rt == ReportType::Error {
                     ok = false;
                 }
@@ -455,16 +527,40 @@ fn get_functions(source: &[&str]) -> Option<FnMap> {
 pub struct Class {
     pub src: Vec<String>,
     pub fns: FnMap,
+    pub ends: BranchEndings,
 }
 
 impl Class {
     pub fn make(lines: &[&str]) -> Option<Class> {
         let funcs = get_functions(lines)?;
-        let source = clean_src(lines)?;
+        let clean = clean_src(lines)?;
+        
+        let source = else_unwrapper(clean)?;
+
+        let endings = match match_endings(&source) {
+            Ok(map) => map,
+            Err((error, line)) => {
+                use {
+                    ReportType::*,
+                    ErrorType::*
+                };
+                match error {
+                    MatchEndingsError::TokenizeError(at, error) => match error {
+                        TokenizeError::InvalidCharacter(ch) => report(Error, (at, line), InvalidChar(ch), None),
+                        TokenizeError::IntegerOverflow => report(Error, (at, line), IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")),
+                        TokenizeError::FloatParseError => report(Error, (at, line), FloatOverflow, Some("this line has an overflowing floating point number (expected signed 32-bit)")),
+                    },
+                    MatchEndingsError::UnterminatedBlock(at) => report(Error, (at, line), UnterminatedBlock, None),
+                    MatchEndingsError::UnmatchedEnd(at) => report(Error, (at, line), UnmatchedEnd, None),
+                }
+                return None;
+            }
+        };
 
         Some(Class {
             src: source,
             fns: funcs,
+            ends: endings,
         })
     }
 }
@@ -489,7 +585,9 @@ pub enum MatchEndingsError {
     UnterminatedBlock(usize),
 }
 
-pub fn match_endings(lines: &[String]) -> Result<HashMap<usize, usize>, MatchEndingsError> {
+type BranchEndings = HashMap<usize, usize>;
+
+pub fn match_endings(lines: &[String]) -> Result<BranchEndings, (MatchEndingsError, &str)> {
     let mut start: Vec<usize> = Vec::new();
     let mut end: Vec<usize> = Vec::new();
 
@@ -497,13 +595,13 @@ pub fn match_endings(lines: &[String]) -> Result<HashMap<usize, usize>, MatchEnd
         let tokens = match tokenize(line) {
             Ok(tokens) => tokens,
             Err(err) => {
-                return Err(MatchEndingsError::TokenizeError(at, err))
+                return Err((MatchEndingsError::TokenizeError(at, err), line))
             }
         };
 
         if let Some(Token::Identifier(ident)) = tokens.first() {
             match ident.as_str() {
-                "if" | "while" => start.push(at),
+                "if" | "while" | "fn" => start.push(at),
                 "end" => end.push(at),
                 _ => {}
             }
@@ -511,9 +609,11 @@ pub fn match_endings(lines: &[String]) -> Result<HashMap<usize, usize>, MatchEnd
     }
 
     if start.len() > end.len() {
-        Err(MatchEndingsError::UnterminatedBlock(*start.last().unwrap()))
+        let point = *start.last().unwrap();
+        Err((MatchEndingsError::UnterminatedBlock(point), &lines[point]))
     } else if end.len() > start.len() {
-        Err(MatchEndingsError::UnmatchedEnd(*end.last().unwrap()))
+        let point = *end.last().unwrap();
+        Err((MatchEndingsError::UnmatchedEnd(point), &lines[point]))
     } else {
         let mut endings: HashMap<usize, usize> = HashMap::new();
         let iter = start.iter().zip(end.iter());
@@ -803,5 +903,24 @@ mod tests {
             "ret",
         ];
         assert_eq!(Class::make(&code), None);
+    }
+
+    #[test]
+    fn else_unwrap() {
+        macro_rules! test {
+            ($expr:expr) => {
+                let source: Vec<String> = vec![
+                    concat!("if", $expr).to_string(),
+                    "else".to_string(),
+                    //"end".to_string(),
+                ];
+
+                let unwrapped = else_unwrapper(source).unwrap();
+                println!("{:#?}", unwrapped);
+            };
+        }
+
+        test!(" 1 == 1");
+        test!("!(1)");
     }
 }

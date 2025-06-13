@@ -1,8 +1,8 @@
-use std::fmt;
-
-use colored::Colorize;
-
-use crate::mem;
+use {
+    std::fmt,
+    colored::Colorize,
+    crate::mem
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ReportType {
@@ -28,6 +28,8 @@ pub enum ErrorType {
     ExpectedExpr,
     UnexpectedEOF,
     UnmatchedEnd,
+    UnmatchedRet,
+    UnmatchedElse,
     UnterminatedBlock,
 
     UndefinedVariable(String),
@@ -38,11 +40,11 @@ pub enum ErrorType {
     TooDeepControl(usize /* max */),
     TooDeepCall(usize /* max */),
     NestedFnDefinition,
+    ElseForLoop,
 
     ConstRedef(String),
     FnRedef(String),
     UselessPrint,
-    UnmatchedRet,
 }
 
 impl fmt::Display for ErrorType {
@@ -65,6 +67,7 @@ impl fmt::Display for ErrorType {
             UnexpectedEOF => "UnexpectedEOF",
             UnmatchedEnd => "UnmatchedEnd",
             UnmatchedRet => "UnmatchedRet",
+            UnmatchedElse => "UnmatchedElse",
             UnterminatedBlock => "UnterminatedBlock",
 
             UndefinedVariable(_) => "UndefinedVariable",
@@ -76,6 +79,7 @@ impl fmt::Display for ErrorType {
             TooDeepCall(_) => "TooDeepCall",
             NullValue => "NullValue",
             NestedFnDefinition => "NestedFnDefinition",
+            ElseForLoop => "LoopElse",
 
             ConstRedef(_) => "ConstRedefinition",
             FnRedef(_) => "FuncRedefinition",
@@ -115,6 +119,7 @@ impl ErrorType {
             UnexpectedEOF => s!("unexpected end of file"),
             UnmatchedEnd => format!("unmatched control statement: {}", "end".bold()),
             UnmatchedRet => format!("unmatched {}", "ret".bold()),
+            UnmatchedElse => format!("unmatched {}", "else".bold()),
             UnterminatedBlock => s!("unterminated control block"),
 
             UndefinedVariable(name) => format!("undefined variable: {}", name.bold()),
@@ -126,6 +131,7 @@ impl ErrorType {
             TooDeepCall(max) => format!("too deep function call (max depth is {})", max.to_string().bold()),
             NullValue => format!("the value has type {}", "null".bold()),
             NestedFnDefinition => s!("function definitions cannot be nested within each other"),
+            ElseForLoop => format!("loops cannot have {} blocks", "else".bold()),
 
             ConstRedef(name) => format!("redefinition of constant: {}", name.bold()),
             FnRedef(name) => format!("redefinition of function: {}", name.bold()),
@@ -136,14 +142,13 @@ impl ErrorType {
 
 //pub type Report = (ErrorType, Option<&str>);
 
-pub fn report(rtype: ReportType, line: usize, what: ErrorType, note: Option<&str>) {
+pub fn report(rtype: ReportType, line: (usize, &str), what: ErrorType, note: Option<&str>) {
     let rtype = match rtype {
         ReportType::Error => "error".bold().red(),
         ReportType::Warning => "warning".bold().yellow(),
     };
-    let line = line + 1;
 
-    eprintln!("{rtype}: line {line}:\n  {}: {}", what.to_string().bold(), what.describe());
+    eprintln!("{rtype}:\n {} {} {}\n{}: {}", (line.0+1).to_string().bold(), "|".bold(), line.1, what.to_string().bold(), what.describe());
 
     if let Some(text) = note {
         eprintln!("{}: {text}", "note".bold().cyan());
