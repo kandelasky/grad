@@ -533,9 +533,7 @@ pub struct Class {
 impl Class {
     pub fn make(lines: &[&str]) -> Option<Class> {
         let funcs = get_functions(lines)?;
-        let clean = fn_decl_remover(lines)?;
-        
-        let source = else_unwrapper(clean)?;
+        let source = else_unwrapper(fn_decl_remover(lines)?)?;
 
         let endings = match match_endings(&source) {
             Ok(map) => map,
