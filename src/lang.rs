@@ -310,7 +310,7 @@ pub fn get_args(toks: &[Token]) -> Vec<&[Token]> {
     result
 }
 
-fn source_parser(source: &[&str]) -> Option<Vec<String>> {
+fn fn_decl_remover(source: &[&str]) -> Option<Vec<String>> {
     let mut src: Vec<String> = Vec::new();
     let mut fn_def: usize = 0;
     let mut ok = true;
@@ -533,7 +533,7 @@ pub struct Class {
 impl Class {
     pub fn make(lines: &[&str]) -> Option<Class> {
         let funcs = get_functions(lines)?;
-        let clean = source_parser(lines)?;
+        let clean = fn_decl_remover(lines)?;
         
         let source = else_unwrapper(clean)?;
 
