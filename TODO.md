@@ -2,19 +2,19 @@
 
 ## Functions
 
-* Accept arguments
+- [ ] Accept arguments
 
-* `ret [value]`
+- [ ] `ret [value]`
 
 ## Threads
 
-* Create threads (`thread_create`)
+- [ ] Create threads (`thread_create`)
 
-* Remove (stop) threads (`thread_remove`)
+- [ ] Remove (stop) threads (`thread_remove`)
 
-* (?) Remove thread and its function (`thread_delete`)
+- [ ] (?) Remove thread and its function (`thread_delete`)
 
-* Process threads
+- [ ] Process threads
 
 ## Standard library
 
