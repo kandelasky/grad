@@ -8,4 +8,10 @@
 
 ## Threads
 
-* Start, process, stop
+* Create threads (`thread_create`)
+
+* Remove (stop) threads (`thread_remove`)
+
+* (?) Remove thread and its function (`thread_delete`)
+
+* Process threads
