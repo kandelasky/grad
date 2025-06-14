@@ -15,3 +15,11 @@
 * (?) Remove thread and its function (`thread_delete`)
 
 * Process threads
+
+## Standard library
+
+...
+
+## Graphics API
+
+...
