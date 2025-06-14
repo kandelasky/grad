@@ -441,19 +441,22 @@ pub fn exec(source: String) {
 
             "nullean" => {
                 if let Some(tokens) = tokens.get(1..) {
-                    for token in tokens {
-                        if let Token::Identifier(ident) = token {
-                            // <- TODO: if this is pointer - remove container
-
-                            let vec = scopes.get_mut(controls.len()).unwrap();
-
-                            if !vec.remove(ident) || variables.remove(ident).is_none() {
-                                report!(Error, UndefinedVariable(ident.to_string()), None);
+                    if !tokens.is_empty() {
+                        for token in tokens {
+                            if let Token::Identifier(ident) = token {
+                                let vec = scopes.get_mut(controls.len()).unwrap();
+                                if !vec.remove(ident) || variables.remove(ident).is_none() {
+                                    report!(Error, UndefinedVariable(ident.to_string()), None);
+                                }
+                            } else {
+                                report!(Error, ExpectedIdent, None);
                             }
-                        } else {
-                            report!(Error, ExpectedIdent, None);
                         }
+                    } else {
+                        report!(Error, ExpectedIdent, None);
                     }
+                } else {
+                    report!(Error, ExpectedIdent, None);
                 }
             }
 
@@ -521,11 +524,8 @@ pub fn exec(source: String) {
                                 _ => {}
                             }
                             Token::Null => {
-                                // <- TODO: if this is pointer - remove container
-
                                 let vec = scopes.get_mut(controls.len()).unwrap();
                                 vec.remove(calling);
-
                                 variables.remove(calling);
                                 next!();
                             }
