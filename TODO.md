@@ -1,5 +1,9 @@
 # The TO-DO list
 
+## Bugs and improvements
+
+- [ ] Make `[VAR] = null` assign literal `null` to the `[VAR]`, and to delete a variable use `del [VAR]` instead
+
 ## Functions
 
 - [ ] Accept arguments
