@@ -2,7 +2,7 @@
 
 ## Bugs and improvements
 
-- [ ] Make `[VAR] = null` assign literal `null` to the `[VAR]`, and to delete a variable use `del [VAR]` instead
+- [ ] 01. Make `[VAR] = null` assign literal `null` to the `[VAR]`, and to delete a variable use `del [VAR]` instead
 
 ## Functions
 
@@ -22,8 +22,8 @@
 
 ## Standard library
 
-...
+..?
 
 ## Graphics API
 
-...
+..?
