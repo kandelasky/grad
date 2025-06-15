@@ -568,9 +568,13 @@ pub struct Class {
 }
 
 impl Class {
+    fn get_source(lines: &[&str]) -> Option<Vec<String>> {
+        else_unwrapper(fn_decl_remover(lines)?)
+    }
+
     pub fn make(lines: &[&str]) -> Option<Class> {
         let funcs = get_functions(lines)?;
-        let source = else_unwrapper(fn_decl_remover(lines)?)?;
+        let source = Class::get_source(lines)?;
 
         if check_intrinsics_use(&source) { return None }
 
