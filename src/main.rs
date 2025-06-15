@@ -2,7 +2,6 @@ use std::path::Path;
 
 use grad::*;
 use serde_derive::*;
-use colored::Colorize;
 
 fn main() -> Result<(), Error> {
     //eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
@@ -36,11 +35,10 @@ enum Error {
 
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let str = match self {
+        write!(f, "{}", match self {
             Error::FileReadFailed => "unable to read file",
             Error::InvalidUtf8 => "invalid UTF-8 data",
-        };
-        write!(f, "{}: {str}", "error".bold().red())
+        })
     }
 }
 
