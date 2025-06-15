@@ -877,17 +877,17 @@ mod tests {
         let code = [
             // empty:
             "fn func_1",
-            "ret",
+            "end",
 
             // with body:
             "fn func_2",
             "    foo",
-            "ret",
+            "ebd",
 
             // with args:
             "fn func_3 ment argu",
             "    foo",
-            "ret",
+            "end",
 
             // with controls inside:
             "fn func_4 ment argu",
@@ -896,7 +896,7 @@ mod tests {
             "            foo",
             "        end",
             "    end",
-            "ret",
+            "end",
         ];
 
         let expected_names = vec![
@@ -923,21 +923,21 @@ mod tests {
 
             // no identifier:
             "fn",      // 1
-            "ret",
+            "end",
 
             // invalid fn's identifier:
             "fn 123",  // 3
-            "ret",
+            "end",
 
             // weird fn's arguments:
             "fn bad_args Rust++",  // 5
-            "ret",
+            "end",
 
             // redefinition:
             "fn func",
-            "ret",
+            "end",
             "fn func", // 9
-            "ret",
+            "end",
         ];
         assert_eq!(Class::make(&code), None);
     }
