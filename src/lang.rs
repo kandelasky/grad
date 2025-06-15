@@ -523,6 +523,43 @@ fn get_functions(source: &[&str]) -> Option<FnMap> {
     }
 }
 
+fn check_intrinsics_use(source: &[String]) -> bool {
+    let mut bad = false;
+
+    for (at, line) in source.iter().enumerate() {
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, (at, line), $w, $n);
+                if $rt == ReportType::Error {
+                    bad = true;
+                }
+                continue;
+            };
+        }
+        
+        let tokens = match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(ch) => { report!(ReportType::Error, ErrorType::InvalidChar(ch), None); },
+                    TokenizeError::IntegerOverflow => { report!(ReportType::Error, ErrorType::IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(ReportType::Error, ErrorType::FloatOverflow, None); },
+                }
+            }
+        };
+
+        if tokens[0] == Token::Dot {
+            if let Some(Token::Identifier(ident)) = tokens.get(1) {
+                report!(ReportType::Error, ErrorType::IntrinsicUse(ident.to_string()), None);
+            } else {
+                report!(ReportType::Error, ErrorType::ExpectedIdent, None);
+            }
+        }
+    }
+
+    bad
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Class {
     pub src: Vec<String>,
@@ -534,6 +571,8 @@ impl Class {
     pub fn make(lines: &[&str]) -> Option<Class> {
         let funcs = get_functions(lines)?;
         let source = else_unwrapper(fn_decl_remover(lines)?)?;
+
+        if check_intrinsics_use(&source) { return None }
 
         let endings = match match_endings(&source) {
             Ok(map) => map,
@@ -920,5 +959,19 @@ mod tests {
 
         test!(" 1 == 1");
         test!("!(1)");
+    }
+
+    #[test]
+    fn using_intrinsics() {
+        let intris = [
+            String::from(".i_am_an_intrinsic"),
+        ];
+
+        let no_intris = [
+            String::from("i_am_not_an_intrinsic"),
+        ];
+
+        assert!(check_intrinsics_use(&intris));
+        assert!(!check_intrinsics_use(&no_intris));
     }
 }

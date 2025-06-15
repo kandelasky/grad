@@ -134,7 +134,7 @@ impl ErrorType {
             NullValue => format!("the value has type {}", "null".bold()),
             NestedFnDefinition => s!("function definitions cannot be nested within each other"),
             ElseForLoop => format!("loops cannot have {} blocks", "else".bold()),
-            IntrinsicUse(item) => format!("{} - implementation detail which may disappear or be replaced at any time", format!("use of unstable interpreter feature `{}`", item).bold()),
+            IntrinsicUse(item) => format!("{} - implementation detail which may disappear or be replaced at any time", format!("`{}` is interpreter intrinsic", item).bold()),
 
             ConstRedef(name) => format!("redefinition of constant: {}", name.bold()),
             FnRedef(name) => format!("redefinition of function: {}", name.bold()),
