@@ -882,7 +882,7 @@ mod tests {
             // with body:
             "fn func_2",
             "    foo",
-            "ebd",
+            "end",
 
             // with args:
             "fn func_3 ment argu",
