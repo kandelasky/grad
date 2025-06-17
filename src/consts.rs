@@ -7,7 +7,7 @@ macro_rules! consts {
 consts! {
 usize:
     MAX_SCOPES = 256
-    MAX_IDENT_LENGTH = 256
+    MAX_IDENT_LENGTH = 40
     MAX_CONTROL_DEPTH = 256
     MAX_CALL_DEPTH = 8192
 }
