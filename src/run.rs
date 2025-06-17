@@ -478,7 +478,7 @@ pub fn exec(source: String) {
                     }
                 } else {
                     if constants.contains(calling) {
-                        report(Warning, (at, line), ConstRedef(calling.to_string()), None);
+                        report(Error, (at, line), ConstRedef(calling.to_string()), None);
                     }
 
                     let op = if let Some(tok) = tokens.get(1) {
