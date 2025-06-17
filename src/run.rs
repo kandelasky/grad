@@ -225,18 +225,6 @@ pub fn exec(source: String) {
                 }
             }
 
-            /* "else" => {
-                if let Some((_, do_, is_loop, _)) = controls.last_mut() {
-                    if !*is_loop {
-                        *do_ = !*do_;
-                    } else {
-                        report!(Error, ElseForLoop, None);
-                    }
-                } else {
-                    report!(Error, UnmatchedElse, None);
-                }
-            } */
-
             /* "repeat" => {
             } */
 
