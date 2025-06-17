@@ -439,7 +439,7 @@ pub fn exec(source: String) {
                 println!("{LINE}\n");
             }
 
-            "nullean" => {
+            "del" => {
                 if let Some(tokens) = tokens.get(1..) {
                     if !tokens.is_empty() {
                         for token in tokens {

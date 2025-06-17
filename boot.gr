@@ -51,10 +51,10 @@ println "var = ", var
 # check that variable exists:
 assert_ex var
 
-# delete multiple variables at once with the `nullean` function:
+# delete multiple variables at once with the `del` function:
 var_1 = 1
 var_2 = 22
-nullean var_1 var_2 var
+del var_1 var_2 var
 
 # =============================================================
 # Control flow
@@ -71,7 +71,7 @@ max = 10
 while i < max
     i + 1
 end
-nullean max i
+del max i
 
 if true
     if true
