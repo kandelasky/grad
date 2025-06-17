@@ -175,7 +175,6 @@ pub fn exprify(toks: &[Token], variables: Option<&VarMap>) -> Result<String, Err
         for (at, token) in toks.iter().enumerate() {
             //dbg!(token);
             if let Token::Identifier(id) = token {
-                //eprintln!("replaced");
                 if id == "true" {
                     tokens[at] = Token::Integer(1);
                 } else if id == "false" {
@@ -353,8 +352,6 @@ fn fn_decl_remover(source: &[&str]) -> Option<Vec<String>> {
         }
     }
 
-    println!("{src:#?}");
-
     if ok { Some(src) } else { None }
 }
 
@@ -421,8 +418,6 @@ fn else_unwrapper(source: Vec<String>) -> Option<Vec<String>> {
         
         src.push(line.to_string());
     }
-
-    println!("\n{src:#?}");
 
     if ok { Some(src) } else { None }
 }
