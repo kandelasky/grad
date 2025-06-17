@@ -15,7 +15,6 @@ pub enum Token {
     StringLiteral(String),
     Integer(i32),
     Float(f32),
-    Null,
 
     Assign, // =
     DollarSign, // $
@@ -100,13 +99,7 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
                     ident.push(c);
                     next!();
                 }
-                tokens.push(
-                    if ident == *"null" {
-                        Token::Null
-                    } else {
-                        Token::Identifier(ident)
-                    }
-                );
+                tokens.push(Token::Identifier(ident));
             },
 
             _ if ch.is_ascii_digit() => {
