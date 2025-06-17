@@ -171,12 +171,6 @@ pub fn exec(source: String) {
                 }
             }
         };
-
-        if let Some((_, do_, _, _)) = controls.last() {
-            if !do_ && calling != "end" {
-                next!();
-            }
-        }
         
         match calling.as_str() {
             // == Controls ====================================================
