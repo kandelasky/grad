@@ -407,15 +407,13 @@ pub fn exec(source: String) {
                 }
             }
 
-            "assert_exists" | "assert_ex" => {
-                if let Some(token) = tokens.get(1) {
-                    if let Token::Identifier(ident) = token {
-                        if !variables.contains_key(ident) {
-                            eprintln!("\nline {}: {} {}\n  variable {} doesn\'t exists", at+1, "assertion".bold(), "failed".bold().red(), ident.bold());
-                        }
-                    } else {
-                        report!(Error, ExpectedIdent, None);
+            "assert_ex" => {
+                if let Some(Token::Identifier(ident)) = tokens.get(1) {
+                    if !variables.contains_key(ident) {
+                        eprintln!("\nline {}: {} {}\n  variable {} doesn\'t exists", at+1, "assertion".bold(), "failed".bold().red(), ident.bold());
                     }
+                } else {
+                    report!(Error, ExpectedIdent, None);
                 }
             }
 
