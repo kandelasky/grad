@@ -16,7 +16,7 @@ println "numbers: ", 42, "; ", 3.14
 # Variables
 
 var = 42     # create a variable,
-var = null   # and remove it!
+del var      # and remove it!
 
 # assign any possible type of value to a variable:
 var = "string"   # string,
