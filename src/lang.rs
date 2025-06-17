@@ -353,6 +353,8 @@ fn fn_decl_remover(source: &[&str]) -> Option<Vec<String>> {
         }
     }
 
+    println!("{src:#?}");
+
     if ok { Some(src) } else { None }
 }
 
@@ -383,46 +385,44 @@ fn else_unwrapper(source: Vec<String>) -> Option<Vec<String>> {
             }
         };
 
-        let fword = if let Token::Identifier(ident) = &tokens[0] {
-            ident
-        } else {
-            continue;
-        };
+        if let Token::Identifier(fword) = &tokens[0] {
+            match fword.as_str() {
+                "if" => {
+                    if line.chars().nth(3).is_some() {
+                        ctls.push((true, line));
+                    } else {
+                        report(ReportType::Error, (at, line), ErrorType::ExpectedExpr, None);
+                        break;
+                    }
+                },
+                "while" => ctls.push((false, line)),
+                "else" => {
+                    let (else_allowed, line) = if let Some(boo) = ctls.pop() {
+                        (boo.0, boo.1)
+                    } else {
+                        report!(ReportType::Error, ErrorType::UnmatchedElse, None);
+                    };
 
-        match fword.as_str() {
-            "if" => {
-                if line.chars().nth(3).is_some() {
-                    ctls.push((true, line));
-                } else {
-                    report(ReportType::Error, (at, line), ErrorType::ExpectedExpr, None);
-                    break;
+                    if else_allowed {
+                        src.push(String::from("end"));
+
+                        let char = line.chars().nth(2).expect("`if` without an expression should be filtered");
+                        let startpoint = if char == ' ' { 3.. } else { 2.. };
+                        src.push(format!("if!({})", &line[startpoint]));
+
+                        continue;
+                    } else {
+                        report!(ReportType::Error, ErrorType::ElseForLoop, None);
+                    }
                 }
-            },
-            "while" => ctls.push((false, line)),
-            "else" => {
-                let (else_allowed, line) = if let Some(boo) = ctls.pop() {
-                    (boo.0, boo.1)
-                } else {
-                    report!(ReportType::Error, ErrorType::UnmatchedElse, None);
-                };
-
-                if else_allowed {
-                    src.push(String::from("end"));
-
-                    let char = line.chars().nth(2).expect("`if` without an expression should be filtered");
-                    let startpoint = if char == ' ' { 3.. } else { 2.. };
-                    src.push(format!("if!({})", &line[startpoint]));
-
-                    continue;
-                } else {
-                    report!(ReportType::Error, ErrorType::ElseForLoop, None);
-                }
+                _ => {}
             }
-            _ => {}
         }
         
         src.push(line.to_string());
     }
+
+    println!("\n{src:#?}");
 
     if ok { Some(src) } else { None }
 }
