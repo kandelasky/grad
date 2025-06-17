@@ -411,7 +411,7 @@ pub fn exec(source: String) {
                 if let Some(token) = tokens.get(1) {
                     if let Token::Identifier(ident) = token {
                         if !variables.contains_key(ident) {
-                            eprintln!("\nline {}: {} {}\n  variable {} not exists", at+1, "assertion".bold(), "failed".bold().red(), ident.bold());
+                            eprintln!("\nline {}: {} {}\n  variable {} doesn\'t exists", at+1, "assertion".bold(), "failed".bold().red(), ident.bold());
                         }
                     } else {
                         report!(Error, ExpectedIdent, None);
