@@ -49,6 +49,27 @@ pub fn exec(source: String) {
         }
     };
 
+    /* let mut tlines: Vec<Vec<Token>> = Vec::new();
+    for (at, line) in source.iter().enumerate() {
+        macro_rules! report {
+            ($rt:expr, $w:expr, $n:expr) => {
+                report($rt, (at, line), $w, $n);
+                return;
+            };
+        }
+        
+        let tokens = match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+            Err(err) => {
+                match err {
+                    TokenizeError::InvalidCharacter(ch) => { report!(Error, InvalidChar(ch), None); },
+                    TokenizeError::IntegerOverflow => { report!(Error, IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
+                    TokenizeError::FloatParseError => { report!(Error, FloatOverflow, None); },
+                }
+            }
+        };
+    } */
+
     let mut routs: Vec<Routine> = vec![Routine::new(&source)];
     let mut routs_len: usize = 1;
     let mut routs_op: Option<RoutineOp<'_>> = None;
