@@ -511,148 +511,149 @@ pub fn exec(source: String) {
                         report!(Error, ExpectedExpr, None);
                     };
 
-                    if toks.len() == 1 {
-                        match &toks[0] {
-                            Token::Identifier(ident) => match ident.as_str() {
-                                "true" | "false" => {
-                                    let value = mem::Value::Int32(if ident == "true" { 1 } else { 0 }, false);
-                                    variables.insert(calling.to_string(), value);
-                                    next!();
+                    let value: mem::Value = {
+                        if toks.len() == 1 && *op == Token::Assign {
+                            match &toks[0] {
+                                Token::Identifier(ident) => match ident.as_str() {
+                                    "true" | "false" => mem::Value::Int32(if ident == "true" { 1 } else { 0 }, false),
+                                    "null" => mem::Value::Null,
+                                    _ => {
+                                        if let Some(value) = variables.get(ident) {
+                                            if let mem::Value::Int32(_, is_ptr) = value {
+                                                if !*is_ptr {
+                                                    // TODO: make something that does NOT clones value
+                                                    value.clone()
+                                                } else {
+                                                    report!(Error, UnexpectedPointer(ident.to_string()), None);
+                                                }
+                                            } else {
+                                                // TODO: make something that does NOT clones value
+                                                value.clone()
+                                            }
+                                        } else {
+                                            report!(Error, UndefinedVariable(ident.to_string()), None);
+                                        }
+                                    }
+                                }
+                                Token::Integer(int) => mem::Value::Int32(*int, false),
+                                Token::Float(float) => mem::Value::Float32(*float),
+                                Token::StringLiteral(string) => {
+                                    mem::Value::Str(string.to_string())
                                 },
-                                _ => {}
+                                _ => { report!(Error, InvalidExpr, None); }
                             }
-                            Token::Null => {
-                                let vec = scopes.get_mut(controls.len()).unwrap();
-                                vec.remove(calling);
-                                variables.remove(calling);
-                                next!();
-                            }
-                            /* Token::Integer(int) => {
-                                variables.insert(calling.to_string(), mem::Variable::new(mem::Value::Int32(*int), false));
-                                next!();
-                            },
-                            Token::Float(fl) => {
-                                variables.insert(calling.to_string(), mem::Variable::new(mem::Value::Float32(*fl), false));
-                                next!();
-                            }, */
-                            Token::StringLiteral(string) => {
-                                variables.insert(calling.to_string(), mem::Value::Str(string.to_string()));
-                                next!();
-                            },
-                            _ => { /* report!(Error, InvalidExpr, None); */ }
-                        }
-                    }
+                        } else {
+                            let expr = match exprify(toks, Some(&variables)) {
+                                Ok(expr) => expr,
+                                Err(error) => { report!(Error, error, Some("when parsing the expression")); }
+                            };
 
-                    let expr = match exprify(toks, Some(&variables)) {
-                        Ok(expr) => expr,
-                        Err(error) => { report!(Error, error, Some("when parsing the expression")); }
+                            match evalexpr::eval(&expr) {
+                                Ok(value) => {
+                                    let evaluaion = match value {
+                                        evalexpr::Value::Int(int) => match i32::try_from(int) {
+                                            Ok(value) => mem::Value::Int32(value, false),
+                                            Err(_) => { report!(Error, IntOverflow, Some("result of the expression caused integer overflow")); }
+                                        },
+                                        evalexpr::Value::Float(fl) => {
+                                            let fl = fl as f32;
+                                            if fl.is_finite() {
+                                                mem::Value::Float32(fl)
+                                            } else {
+                                                report!(Error, FloatOverflow, Some("result of the expression caused float overflow"));
+                                            }
+                                        },
+                                        evalexpr::Value::Empty => {
+                                            report!(Error, ExpectedExpr, None);
+                                        }
+                                        _ => panic!("uncovered type in match(eval(&expr)): {:?}", value)
+                                    };
+            
+                                    if op == &Token::Assign {
+                                        evaluaion
+                                    } else {
+                                        let og_value = &variables.get(calling).unwrap();
+            
+                                        match og_value {
+                                            mem::Value::Int32(og_int, _) => {
+                                                if let mem::Value::Int32(ev, _) = evaluaion {
+                                                    let check = match op {
+                                                        Token::Add => og_int.checked_add(ev),
+                                                        Token::Substract => og_int.checked_sub(ev),
+                                                        Token::Multiply => og_int.checked_mul(ev),
+                                                        Token::Divide => og_int.checked_div(ev),
+                                                        Token::Remainder => og_int.checked_rem(ev),
+                                                        Token::Exponent => {
+                                                            let expon: u32 = if let Ok(v) = u32::try_from(ev) {
+                                                                v
+                                                            } else {
+                                                                report!(Error, IntOverflow, Some("when tried to compute the exponent"));
+                                                            };
+                                                            og_int.checked_pow(expon)
+                                                        },
+                                                        _ => panic!()
+                                                    };
+                                                    if let Some(result) = check {
+                                                        mem::Value::Int32(result, false)
+                                                    } else {
+                                                        report!(Error, IntOverflow, Some("when doing compound assignment"));
+                                                    }
+                                                } else {
+                                                    report!(Error, MismTypes(ValueType::Int32), None);
+                                                }
+                                            }
+                                            mem::Value::Float32(og_float) => {
+                                                if let mem::Value::Float32(ev) = evaluaion {
+                                                    let result = match op {
+                                                        Token::Add => og_float + ev,
+                                                        Token::Substract => og_float - ev,
+                                                        Token::Multiply => og_float * ev,
+                                                        Token::Divide => og_float / ev,
+                                                        Token::Remainder => og_float % ev,
+                                                        Token::Exponent => { report!(Error, FloatExp, Some("when doing compound assignment")); },
+                                                        _ => panic!()
+                                                    };
+                                                    if result.is_finite() {
+                                                        mem::Value::Float32(result)
+                                                    } else {
+                                                        report!(Error, FloatOverflow, Some("when doing compound assignment"));
+                                                    }
+                                                } else {
+                                                    report!(Error, MismTypes(ValueType::Float32), None);
+                                                }
+                                            }
+                                            mem::Value::Null => { report!(Error, NullValue, Some(format!("in variable {}", calling.bold()).as_str())); }
+                                            _ => panic!()
+                                        }
+                                    }
+                                }
+                                Err(_) => { report!(Error, InvalidExpr, Some("when evaluating the expression")); }
+                            } // match evalexpr::eval(&expr)
+                        } // if toks.len() == 1
+                    }; // let value
+
+                    variables.insert(calling.to_string(), value);
+
+                    let defined_outer_scope: bool = {
+                        let mut result: bool = false;
+                        'g: for dive in 0..controls.len() {
+                            for ident in scopes.get(dive).unwrap() {
+                                if ident == calling {
+                                    result = true;
+                                    break 'g;
+                                }
+                            }
+                        }
+                        result
                     };
 
-                    match evalexpr::eval(&expr) {
-                        Ok(value) => {
-                            let evaluaion = match value {
-                                evalexpr::Value::Int(int) => match i32::try_from(int) {
-                                    Ok(value) => mem::Value::Int32(value, false),
-                                    Err(_) => { report!(Error, IntOverflow, Some("result of the expression caused integer overflow")); }
-                                },
-                                evalexpr::Value::Float(fl) => {
-                                    let fl = fl as f32;
-                                    if fl.is_finite() {
-                                        mem::Value::Float32(fl)
-                                    } else {
-                                        report!(Error, FloatOverflow, Some("result of the expression caused float overflow"));
-                                    }
-                                },
-                                evalexpr::Value::Empty => {
-                                    report!(Error, ExpectedExpr, None);
-                                }
-                                _ => panic!("uncovered type in match(eval(&expr)): {:?}", value)
-                            };
-    
-                            let v = if op == &Token::Assign {
-                                evaluaion
-                            } else {
-                                let og_value = &variables.get(calling).unwrap();
-    
-                                match og_value {
-                                    mem::Value::Int32(og_int, _) => {
-                                        if let mem::Value::Int32(ev, _) = evaluaion {
-                                            let check = match op {
-                                                Token::Add => og_int.checked_add(ev),
-                                                Token::Substract => og_int.checked_sub(ev),
-                                                Token::Multiply => og_int.checked_mul(ev),
-                                                Token::Divide => og_int.checked_div(ev),
-                                                Token::Remainder => og_int.checked_rem(ev),
-                                                Token::Exponent => {
-                                                    let expon: u32 = if let Ok(v) = u32::try_from(ev) {
-                                                        v
-                                                    } else {
-                                                        report!(Error, IntOverflow, Some("when tried to compute the exponent"));
-                                                    };
-                                                    og_int.checked_pow(expon)
-                                                },
-                                                _ => panic!()
-                                            };
-                                            if let Some(result) = check {
-                                                mem::Value::Int32(result, false)
-                                            } else {
-                                                report!(Error, IntOverflow, Some("when doing compound assignment"));
-                                            }
-                                        } else {
-                                            report!(Error, MismTypes(ValueType::Int32), None);
-                                        }
-                                    }
-                                    mem::Value::Float32(og_float) => {
-                                        if let mem::Value::Float32(ev) = evaluaion {
-                                            let result = match op {
-                                                Token::Add => og_float + ev,
-                                                Token::Substract => og_float - ev,
-                                                Token::Multiply => og_float * ev,
-                                                Token::Divide => og_float / ev,
-                                                Token::Remainder => og_float % ev,
-                                                Token::Exponent => { report!(Error, FloatExp, Some("when doing compound assignment")); },
-                                                _ => panic!()
-                                            };
-                                            if result.is_finite() {
-                                                mem::Value::Float32(result)
-                                            } else {
-                                                report!(Error, FloatOverflow, Some("when doing compound assignment"));
-                                            }
-                                        } else {
-                                            report!(Error, MismTypes(ValueType::Float32), None);
-                                        }
-                                    }
-                                    mem::Value::Null => { report!(Error, NullValue, Some(format!("in variable {}", calling.bold()).as_str())); }
-                                    _ => panic!()
-                                }
-                            };
-
-                            variables.insert(calling.to_string(), v);
-
-                            let defined_outer_scope: bool = {
-                                let mut result: bool = false;
-                                'g: for dive in 0..controls.len() {
-                                    for ident in scopes.get(dive).unwrap() {
-                                        if ident == calling {
-                                            result = true;
-                                            break 'g;
-                                        }
-                                    }
-                                }
-                                result
-                            };
-
-                            if !defined_outer_scope {
-                                let set = scopes.get_mut(controls.len()).unwrap();
-                                set.insert(calling.to_string());
-                            }
-                        }
-                        Err(_) => { report!(Error, InvalidExpr, Some("when evaluating the expression")); }
+                    if !defined_outer_scope {
+                        let set = scopes.get_mut(controls.len()).unwrap();
+                        set.insert(calling.to_string());
                     }
-                }
+                } // if let Some(func) = func
             } // _
         } // match calling.as_str()
-
         next!();
-    }
+    } // routs.last_mut()
 }
