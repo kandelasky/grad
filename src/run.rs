@@ -11,17 +11,17 @@ pub struct RunConfig {
     debug_mem: bool,
 }
 
-// type TokensGroup = Vec<Vec<String>>;
+type TokensGroup = Vec<Vec<Token>>;
 
 #[derive(Clone, Debug)]
 pub struct Routine<'a> {
-    pub body: &'a Vec<String>,
+    pub body: &'a TokensGroup,
     pub at: usize,
 
 }
 
 impl<'a> Routine<'a> {
-    pub fn new(body: &'a Vec<String>) -> Self {
+    pub fn new(body: &'a TokensGroup) -> Self {
         Self {
             body,
             at: 0,
@@ -29,9 +29,9 @@ impl<'a> Routine<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub enum RoutineOp<'a> {
-    Add(&'a Vec<String>),
+    Add(&'a TokensGroup),
     Pop,
 }
 
@@ -51,7 +51,7 @@ pub fn exec(source: String) {
         }
     };
 
-    /* let mut tlines: TokensGroup = Vec::new();
+    let mut tks: TokensGroup = Vec::new();
     for (at, line) in source.iter().enumerate() {
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
@@ -60,8 +60,8 @@ pub fn exec(source: String) {
             };
         }
         
-        let tokens = match tokenize(line) {
-            Ok(tokens) => if !tokens.is_empty() { tokens } else { continue; },
+        match tokenize(line) {
+            Ok(tokens) => if !tokens.is_empty() { tks.push(tokens); } else { continue; },
             Err(err) => {
                 match err {
                     TokenizeError::InvalidCharacter(ch) => { report!(Error, InvalidChar(ch), None); },
@@ -70,9 +70,9 @@ pub fn exec(source: String) {
                 }
             }
         };
-    } */
+    }
 
-    let mut routs: Vec<Routine> = vec![Routine::new(&source)];
+    let mut routs: Vec<Routine> = vec![Routine::new(&tks)];
     let mut routs_len: usize = 1;
     let mut routs_op: Option<RoutineOp<'_>> = None;
 
@@ -135,12 +135,14 @@ pub fn exec(source: String) {
 
         let (lines, at) = (route.body, route.at);
 
-        let line = if let Some(line) = lines.get(at) {
+        let tokens = if let Some(line) = lines.get(at) {
             line
         } else {
             routs_op = Some(RoutineOp::Pop);
             continue;
         };
+
+        let line = &source[at];
 
         if config.debug_line {
             eprintln!("[{}]\t{}", at + 1, line);
