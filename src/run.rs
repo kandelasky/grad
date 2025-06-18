@@ -11,7 +11,6 @@ pub struct RunConfig {
     debug_mem: bool,
 }
 
-
 #[derive(Clone, Debug)]
 pub struct Routine<'a> {
     pub body: &'a TokensGroup,
