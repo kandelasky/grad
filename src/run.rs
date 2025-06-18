@@ -11,6 +11,8 @@ pub struct RunConfig {
     debug_mem: bool,
 }
 
+// type TokensGroup = Vec<Vec<String>>;
+
 #[derive(Clone, Debug)]
 pub struct Routine<'a> {
     pub body: &'a Vec<String>,
@@ -49,7 +51,7 @@ pub fn exec(source: String) {
         }
     };
 
-    /* let mut tlines: Vec<Vec<Token>> = Vec::new();
+    /* let mut tlines: TokensGroup = Vec::new();
     for (at, line) in source.iter().enumerate() {
         macro_rules! report {
             ($rt:expr, $w:expr, $n:expr) => {
