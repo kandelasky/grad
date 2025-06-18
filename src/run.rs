@@ -11,7 +11,6 @@ pub struct RunConfig {
     debug_mem: bool,
 }
 
-type TokensGroup = Vec<Vec<Token>>;
 
 #[derive(Clone, Debug)]
 pub struct Routine<'a> {

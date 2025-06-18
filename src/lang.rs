@@ -41,6 +41,8 @@ pub enum Token {
     At, // @
 }
 
+pub type TokensGroup = Vec<Vec<Token>>;
+
 pub fn tokenize(line: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = line.chars().peekable();
