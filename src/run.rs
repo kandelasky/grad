@@ -160,17 +160,6 @@ pub fn exec(source: String) {
             };
         }
         
-        let tokens = match tokenize(line) {
-            Ok(tokens) => if !tokens.is_empty() { tokens } else { next!(); },
-            Err(err) => {
-                match err {
-                    TokenizeError::InvalidCharacter(ch) => { report!(Error, InvalidChar(ch), None); },
-                    TokenizeError::IntegerOverflow => { report!(Error, IntOverflow, Some("this line has an overflowing integer (expected signed 32-bit)")); },
-                    TokenizeError::FloatParseError => { report!(Error, FloatOverflow, None); },
-                }
-            }
-        };
-        
         macro_rules! get_args {
             ($expected:expr) => {{
                 let args = get_args(&tokens[1..]);

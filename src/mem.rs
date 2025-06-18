@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::lang::TokensGroup;
+
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Value {
     Int32(i32, bool /* ptr? */),
@@ -19,11 +21,11 @@ pub fn fill(variables: &mut VarMap, map: &VarMap) {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub at: usize,
-    pub body: Vec<String>
+    pub body: TokensGroup
 }
 
 impl Function {
-    pub fn new(at: usize, body: Vec<String>) -> Self {
+    pub fn new(at: usize, body: TokensGroup) -> Self {
         Self { at, body }
     }
 }

@@ -477,7 +477,7 @@ fn get_functions(source: &[&str]) -> Option<FnMap> {
                     _ => {}
                 }
             }
-            func.body.push(line.to_string());
+            func.body.push(tokens);
         } else if tokens[0] == Token::Identifier(String::from("fn")) {
             if let Some(Token::Identifier(ident)) = tokens.get(1) {
                 if !fns.contains_key(ident) {
