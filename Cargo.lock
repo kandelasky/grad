@@ -113,8 +113,6 @@ dependencies = [
  "evalexpr",
  "flate2",
  "quad-rand",
- "serde",
- "serde_derive",
 ]
 
 [[package]]

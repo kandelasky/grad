@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use grad::*;
-use serde_derive::*;
 
 fn main() -> Result<(), Error> {
     //eprintln!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
@@ -42,7 +41,6 @@ impl std::fmt::Debug for Error {
     }
 }
 
-#[derive(Serialize, Deserialize)]
 struct GradConfig {
     width: u32,
     height: u32,
