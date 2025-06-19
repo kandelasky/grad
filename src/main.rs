@@ -41,7 +41,7 @@ impl std::fmt::Debug for Error {
     }
 }
 
-struct GradConfig {
+/* struct GradConfig {
     width: u32,
     height: u32,
     is_fullscreen: bool,
@@ -57,4 +57,4 @@ impl Default for GradConfig {
             is_resizable: true,
         }
     }
-}
+} */
